@@ -1,186 +1,164 @@
-# Pygame and system modules
-import sys
 import pygame
+import sys
 from pygame.locals import *
-from . import keyboard
-from . import mouse
 
-# Initializes pygame's modules
-pygame.init()
-    
-"""A simple Window class, it's the primary Surface(from pygame).
-All the other game's renderable objects will be drawn on it. """
-class Window():
-    #A class attribute in Python, this case is similar to Java statics
-    screen = None
-    
-    """Initialize a Window (width x height)"""
-    def __init__(self, width, height):
-        # Input controllers
-        Window.keyboard = keyboard.Keyboard()
-        Window.mouse = mouse.Mouse()
+"""
+===============================================================================
+POWER PPLAY 2.0 - Framework de Alta Performance para Desenvolvimento de Jogos
+===============================================================================
+Desenvolvedor Líder e Arquiteto da Versão 2.0: 
+    Kauã Neves Jesus de Paula
+
+Ano de Lançamento: 2026
+Instituição: Universidade Federal Fluminense (IC-UFF) - Niterói, RJ
+-------------------------------------------------------------------------------
+Este software é uma evolução profunda e modernização da biblioteca PPlay,
+originalmente concebida pela Equipe PPlay:
+    Prof. Esteban Clua, Prof. Anselmo Montenegro, Gabriel Saldanha,
+    Adônis Gasiglia, Yuri Nogueira e Sergio Herman.
+===============================================================================
+"""
+
+class Window:
+    """
+    POWER PPLAY 2.0 - Janela de Alta Performance e Resolução Virtual.
+    Versão 2.6.2: Blindada contra erros de escalonamento e minimização.
+    """
+    _instance = None 
+    screen = None # Atributo estático para compatibilidade legada
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(Window, cls).__new__(cls)
+        return cls._instance
+
+    def __init__(self, largura_virtual=800, altura_virtual=600, titulo="Power PPlay 2.0", resizavel=True, pixel_art=True):
+        if hasattr(self, '_already_init'):
+            return
         
-        # Size
-        self.width = width
-        self.height = height
+        if not pygame.get_init():
+            pygame.init()
 
-        # Pattern color
-        self.color = [0,0,0]  # Black
+        # Resolução interna do jogo
+        self.largura = largura_virtual
+        self.altura = altura_virtual
+        self.titulo = titulo
+        self.pixel_art = pixel_art
+        
+        self._clock = pygame.time.Clock()
+        self._delta_time = 0
+        self.eventos = []
+        self.cor_fundo = (0, 0, 0)
 
-        # Pattern Title
-        self.title = "Title"
+        # Configura flags de vídeo
+        flags = pygame.DOUBLEBUF | pygame.HWSURFACE
+        if resizavel:
+            flags |= pygame.RESIZABLE
+            
+        # Cria a janela real do Windows
+        self.real_screen = pygame.display.set_mode([self.largura, self.altura], flags)
+        
+        # Cria o Buffer Virtual (Canvas)
+        self.screen = pygame.Surface((self.largura, self.altura))
+        Window.screen = self.screen # Sincroniza atributo estático
+        
+        pygame.display.set_caption(self.titulo)
+        
+        # Subsistemas
+        from .keyboard import Keyboard
+        from .mouse import Mouse
+        self.keyboard = Keyboard()
+        self.mouse = Mouse()
+        
+        self._already_init = True
 
-        # Time Control
-        self.curr_time = 0  # current frame time
-        self.last_time = 0  # last frame time 
-        self.total_time = 0  # += curr-last(delta_time), update()
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            Window()
+        return cls._instance
 
-        # Creates the screen (pygame.Surface)
-        # There are some useful flags (look pygame's docs)
-        # It's like a static attribute in Java
-        Window.screen = pygame.display.set_mode([self.width, self.height])
-        # ? Why is it possible to do w.screen?
+    @classmethod
+    def get_screen(cls):
+        return cls.get_instance().screen
 
-        # Sets pattern starting conditions
-        self.set_background_color(self.color)
-        self.set_title(self.title)
-
-        # Updates the entire screen if no arguments are passed
-        # Can be used to update portions of the screen (Rect list)
-        pygame.display.update()
-
-#------------------------TODO - VIDEO RESIZE METHODS----------------------
-    """Not implemented yet - Sets the Window to Fullscreen"""
-    # Unfortunately, it must save the old screen (buffer) and
-    # blit (transfer, see pygame doc) to the new FSCREEN
-    def set_fullscreen(self): pass
-    # TODO
-
-    """Not implemented yet - Disable the full display mode"""
-    # Yeah.. guess what..
-    def restoreScreen(self): pass
-    # TODO
-
-    """Not implemented yet - Sets the Window resolution"""
-    # The same problem as fullscreen
-    def set_resolution(self, width, height): pass
-    # TODO
-    
-#-----------------------CONTROL METHODS---------------------------
-    """Refreshes the Window - makes changes visible, AND updates the Time"""
     def update(self):
-        pygame.display.update()  # refresh
+        """Finaliza o desenho e projeta na tela real com proteção contra crash."""
+        largura_real, altura_real = self.real_screen.get_size()
         
-        for event in pygame.event.get():  # necessary to not get errors
-            if event.type==QUIT:
+        # PROTEÇÃO: Se a janela estiver minimizada (tamanho 0), não tenta desenhar
+        if largura_real < 1 or altura_real < 1:
+            pygame.display.flip()
+            self._clock.tick()
+            self.eventos = pygame.event.get()
+            return
+
+        # Cálculo do escalonamento mantendo Aspect Ratio (preenche a tela sem bordas)
+        ratio = max(largura_real / self.largura, altura_real / self.altura)
+        nova_w = max(1, int(self.largura * ratio))
+        nova_h = max(1, int(self.altura * ratio))
+        pos_x = (largura_real - nova_w) // 2
+        pos_y = (altura_real - nova_h) // 2
+        
+        # Preenche fundo (faixas pretas)
+        self.real_screen.fill((0, 0, 0))
+        
+        # Tenta realizar o redimensionamento com tratamento de erro
+        try:
+            if self.pixel_art:
+                scaled = pygame.transform.scale(self.screen, (nova_w, nova_h))
+            else:
+                scaled = pygame.transform.smoothscale(self.screen, (nova_w, nova_h))
+            
+            self.real_screen.blit(scaled, (pos_x, pos_y))
+        except pygame.error:
+            # Fallback caso o transform falhe por algum motivo de hardware
+            self.real_screen.blit(self.screen, (0, 0))
+            
+        pygame.display.flip()
+        
+        # Limpa o buffer para o próximo frame
+        self.screen.fill(self.cor_fundo)
+        
+        # Eventos
+        self.eventos = pygame.event.get()
+        for ev in self.eventos:
+            if ev.type == QUIT:
                 self.close()
-        self.last_time = self.curr_time  # set last frame time
-        self.curr_time = pygame.time.get_ticks()  # since pygame.init()  
-        self.total_time += (self.curr_time - self.last_time)  # == curr_time
-        # curr_time should be the REAL current time, but in Python
-        # the method returns the time in seconds.
-        # And we DO WANT MILLIseconds :P
-        # While REAL time is not necessary, yet..
+            if ev.type == KEYDOWN and ev.key == K_F11:
+                pygame.display.toggle_fullscreen()
 
-    """Paints the screen - White - and update"""
-    def clear(self):
-        self.set_background_color([255,255,255])
-        self.update()
+        # Sincroniza o tempo (Delta Time)
+        self._delta_time = self._clock.tick() / 1000.0
 
-    """
-    Closes the Window and stops the program - throws an exception
-    """
+    def delta_time(self):
+        return self._delta_time
+
+    def get_fps(self):
+        return self._clock.get_fps()
+
+    def set_background_color(self, cor):
+        if isinstance(cor, str):
+            try: self.cor_fundo = pygame.Color(cor)
+            except: self.cor_fundo = (0,0,0)
+        else:
+            self.cor_fundo = cor
+
+    def draw_text(self, texto, x, y, tamanho=20, cor=(255, 255, 255), fonte="Arial"):
+        try:
+            f = pygame.font.SysFont(fonte, tamanho)
+            img = f.render(str(texto), True, cor)
+            self.screen.blit(img, (x, y))
+        except: pass
+
+    def screen_to_virtual_coords(self, px, py):
+        lw, lh = self.real_screen.get_size()
+        if lw < 1 or lh < 1: return px, py
+        ratio = min(lw / self.largura, lh / self.altura)
+        vx = (px - (lw - self.largura * ratio) // 2) / ratio
+        vy = (py - (lh - self.altura * ratio) // 2) / ratio
+        return vx, vy
+
     def close(self):
         pygame.quit()
         sys.exit()
-        
-#---------------------GETTERS AND SETTERS METHODS-----------------
-    """
-    Changes background color - receives a vector [R, G, B] value
-    Example: set_background_color([0,0,0]) -> black
-    or set_background_color([255,255,255]) -> white
-    """
-    def set_background_color(self, RGB):
-        self.color = RGB
-        Window.screen.fill(self.color)
-    # !Implement later possible strings values, such as:
-    # "red","green","blue"..!
-
-    """Gets the color attribute (background)"""
-    def get_background_color(self):
-        return self.color
-
-    """Sets the title of the Window"""
-    def set_title(self, title):
-        self.title = title
-        pygame.display.set_caption(title)
-
-    """Gets the title of the Window"""
-    def get_title(self):
-        return self.title
-
-#----------------------TIME CONTROL METHODS--------------------------
-        
-    """Pause the program for an amount of time - milliseconds"""
-    # Uses the processor to make delay accurate instead of
-    # pygame.time.wait that SLEEPS the proccess
-    def delay(self, time_ms):
-        pygame.time.delay(time_ms)
-
-    """
-    Returns the time passed between
-    the last and the current frame - SECONDS
-    """
-    def delta_time(self):
-        return (self.curr_time - self.last_time)/1000.0
-
-    """Returns the total time passed since the Window was created"""
-    def time_elapsed(self):
-        return self.total_time
-
-#------------------------DRAW METHODS-------------------------------
-    """
-    Draw a text on the screen at X and Y co-ords, using [R, G, B] color
-    [with the specified font,
-           [with the specified size,
-                   [Bold,
-                         [Italic]]]]
-    """
-    def draw_text(self, text, x, y, size=12, color=(0,0,0),
-                 font_name="Arial", bold=False, italic=False):
-        # Creates a Font from the system fonts
-        # SysFont(name, size, bold=False, italic=False) -> Font
-        font = pygame.font.SysFont(font_name, size, bold, italic)
-
-        # Creates a pygame.Surface with the text rendered on it
-        # render(text, antialias, color, background=None)->Surface
-        font_surface = font.render(text, True, color)
-        # That's because pygame does NOT provide a way
-        # to directly draw text on an existing Surface.
-        # So you must use Font.render() -> Surface and BLIT
-        
-        # Finally! BLIT!
-        self.screen.blit(font_surface, [x, y])
-
-#---------------------CLASS METHODS--------------------------
-    """Returns the drawing surface"""
-    @classmethod
-    def get_screen(cls):
-        return cls.screen
-
-    """Returns the keyboard input"""
-    @classmethod
-    def get_keyboard(cls):
-        return cls.keyboard
-
-    """Returns the mouse input"""
-    @classmethod
-    def get_mouse(cls):
-        return cls.mouse
-    
-
-
-        
-        
-        
-    

@@ -1,74 +1,113 @@
-# Modules import
-from . import point
 import pygame
+import math
+from .point import Point
 
-"""A simple class to deal with basic collision methods"""
 """
-Must note that the collision is inclusive, i.e.,
-occurs when one enters the other effectively,
-not only when over the same position of the edge.
+===============================================================================
+POWER PPLAY 2.0 - Framework de Alta Performance para Desenvolvimento de Jogos
+===============================================================================
+Desenvolvedor Líder e Arquiteto da Versão 2.0: 
+    Kauã Neves Jesus de Paula
+
+Ano de Lançamento: 2026
+Instituição: Universidade Federal Fluminense (IC-UFF) - Niterói, RJ
+-------------------------------------------------------------------------------
+Este software é uma evolução profunda e modernização da biblioteca PPlay,
+originalmente concebida pela Equipe PPlay:
+    Prof. Esteban Clua, Prof. Anselmo Montenegro, Gabriel Saldanha,
+    Adônis Gasiglia, Yuri Nogueira e Sergio Herman.
+===============================================================================
 """
-class Collision():
-    """
-    minN: the Point of the top left of the N rect
-    maxN: the Point of the bottom right of the N rect
-    """
-    @classmethod
-    def collided_rect(cls, min1, max1, min2, max2):
-        if(min1.x >= max2.x or max1.x <= min2.x):
-            return False
-        if(min1.y >= max2.y or max1.y <= min2.y):
-            return False
-        return True
 
+class Collision:
     """
-    args[0]: the origin GameObject
-    args[1]: the target GameObject
+    Classe utilitária para detecção de colisões entre GameObjects.
+    Oferece métodos desde o mais rápido (Retângulos) até o mais preciso (Pixels).
     """
-    @classmethod
-    def collided(cls, *args):
-        """
-        if(len(args) == 2
-        and isinstance(args[0], GameObject)
-        and isinstance(args[1], GameObject)):
-        """
-        game_object1_min = point.Point(args[0].x, args[0].y)
-        game_object1_max = point.Point(args[0].x + args[0].width,
-                                 args[0].y + args[0].height)
 
-        game_object2_min = point.Point(args[1].x, args[1].y)
-        game_object2_max = point.Point(args[1].x + args[1].width,
-                                 args[1].y + args[1].height)
-
-        return (Collision.collided_rect(game_object1_min, game_object1_max,
-                                        game_object2_min, game_object2_max))
-
-    """
-    Perfect-pixel collision using masks.
-    """
-    @classmethod
-    def perfect_collision(cls, gameimage1, gameimage2):
+    @staticmethod
+    def collided(obj1, obj2):
         """
-        Both objects must extend a GameImage, 
-        since it has the pygame.mask and pygame.Rect
+        O método mais rápido (AABB). 
+        Verifica se os retângulos dos objetos se sobrepõem.
         """
-        offset_x = (gameimage2.rect.left - gameimage1.rect.left)
-        offset_y = (gameimage2.rect.top - gameimage1.rect.top)
+        return (obj1.x < obj2.x + obj2.width and
+                obj1.x + obj1.width > obj2.x and
+                obj1.y < obj2.y + obj2.height and
+                obj1.y + obj1.height > obj2.y)
+
+    @staticmethod
+    def collided_circle(obj1, obj2):
+        """
+        Verifica colisão entre dois círculos usando a distância entre centros.
+        Assume que o raio é metade da largura do objeto.
+        """
+        # Calcula os centros
+        raio1 = obj1.width / 2
+        raio2 = obj2.width / 2
         
-        mask_1 = pygame.mask.from_surface(gameimage1.image)
-        mask_2 = pygame.mask.from_surface(gameimage2.image)
+        centro1_x = obj1.x + raio1
+        centro1_y = obj1.y + raio1
+        centro2_x = obj2.x + raio2
+        centro2_y = obj2.y + raio2
         
-        if(mask_1.overlap(mask_2, (offset_x, offset_y)) != None):
-            return True
-        return False
+        # Teorema de Pitágoras: a² + b² = c²
+        distancia = math.sqrt((centro2_x - centro1_x)**2 + (centro2_y - centro1_y)**2)
+        
+        return distancia < (raio1 + raio2)
 
-    """
-    Perfect collision aux - is called by GameImage
-    """
-    @classmethod
-    def collided_perfect(cls, gameimage1, gameimage2):
-        return (Collision.perfect_collision(gameimage1, gameimage2))
-                      
+    @staticmethod
+    def perfect_collision(obj1, obj2):
+        """
+        Colisão por Máscara (Pixel Perfect). 
+        Só ocorre se os pixels não transparentes se tocarem.
+        Nota: Requer que os objetos sejam GameImage ou Sprites.
+        """
+        # Primeiro fazemos o check de retângulo (AABB) por performance.
+        # Se os retângulos nem se tocam, é impossível os pixels se tocarem.
+        if not Collision.collided(obj1, obj2):
+            return False
+
+        # Gera máscaras de bits a partir das imagens (o Pygame faz o cache interno)
+        mask1 = pygame.mask.from_surface(obj1.image)
+        mask2 = pygame.mask.from_surface(obj2.image)
+
+        # Calcula a diferença de posição entre eles
+        offset_x = int(obj2.x - obj1.x)
+        offset_y = int(obj2.y - obj1.y)
+
+        # Verifica se as máscaras se sobrepõem
+        return mask1.overlap(mask2, (offset_x, offset_y)) is not None
+
+
+    @staticmethod
+    def raycast(origem_x, origem_y, destino_x, destino_y, lista_solidos):
+        """
+        Lança um raio entre dois pontos e retorna o primeiro objeto atingido.
+        Útil para Visão de IA e Sensores.
+        """
+        # Quantidade de passos para verificar o raio (precisão)
+        distancia = math.hypot(destino_x - origem_x, destino_y - origem_y)
+        passos = int(distancia / 4) # Verifica a cada 4 pixels
+        
+        if passos == 0: return None
+
+        for i in range(passos):
+            t = i / passos
+            px = origem_x + (destino_x - origem_x) * t
+            py = origem_y + (destino_y - origem_y) * t
             
-        
+            # Verifica se este ponto do raio está dentro de algum sólido
+            for solido in lista_solidos:
+                if (solido.x <= px <= solido.x + solido.width and
+                    solido.y <= py <= solido.y + solido.height):
+                    return solido # Retorna o objeto atingido
+        return None
     
+    
+    def draw_debug_circle(self, obj, cor=(255, 0, 0)):
+        """Desenha o círculo de colisão para fins de debug."""
+        from .window import Window
+        raio = int(obj.width / 2)
+        centro = (int(obj.x + raio), int(obj.y + raio))
+        pygame.draw.circle(Window.get_screen(), cor, centro, raio, 1)

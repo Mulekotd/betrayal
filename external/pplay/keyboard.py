@@ -1,53 +1,58 @@
 import pygame
-from pygame.locals import *
+from .window import Window
 
-# Initializes pygame's modules
-pygame.init()
+"""
+===============================================================================
+POWER PPLAY 2.0 - Framework de Alta Performance para Desenvolvimento de Jogos
+===============================================================================
+Desenvolvedor Líder e Arquiteto da Versão 2.0: 
+    Kauã Neves Jesus de Paula
 
-class Keyboard():
-    """
-    Returns True if the key IS pressed, it means
-    the press-check occurs every frame
-    """
-    def key_pressed(self, key):
-        key = self.to_pattern(key)
-        keys = pygame.key.get_pressed()
-        if(keys[key]):
-            return True
+Ano de Lançamento: 2026
+Instituição: Universidade Federal Fluminense (IC-UFF) - Niterói, RJ
+-------------------------------------------------------------------------------
+Este software é uma evolução profunda e modernização da biblioteca PPlay,
+originalmente concebida pela Equipe PPlay:
+    Prof. Esteban Clua, Prof. Anselmo Montenegro, Gabriel Saldanha,
+    Adônis Gasiglia, Yuri Nogueira e Sergio Herman.
+===============================================================================
+"""
 
-        return False
-    
-    """Shows the int code of the key"""
-    def show_key_pressed(self):
-        events = pygame.event.get()
-        for event in events:
-            if event.type == pygame.KEYDOWN:
-                print(event.key)
-                
-    def to_pattern(self, key):
-        if((key=="LEFT") or (key=="left")):
-            return pygame.K_LEFT
-        elif((key=="RIGHT") or (key=="right")):
-            return pygame.K_RIGHT
-        elif((key=="UP") or (key=="up")):
-            return pygame.K_UP
-        elif((key=="DOWN") or (key=="down")):
-            return pygame.K_DOWN
-        elif((key=="ENTER") or (key=="enter") or
-             (key=="RETURN") or (key=="return")):
-            return pygame.K_RETURN
-        elif((key=="ESCAPE") or (key=="escape") or
-             (key=="ESC") or (key=="esc")):
-            return pygame.K_ESCAPE
-        elif((key=="SPACE") or (key=="space")):
-            return pygame.K_SPACE
-        elif((key=="LEFT_CONTROL") or (key=="left_control")):
-            return pygame.K_LCTRL
-        elif((key=="LEFT_SHIFT") or (key=="left_shift")):
-            return pygame.K_LSHIFT
-        elif(((key >= "A") and (key <= "Z")) or
-             ((key  >= "a") and (key <= "z"))):
-            return getattr(pygame, "K_" + key.lower())
-        elif((key >= "0") and (key <= "9")):
-            return getattr(pygame, "K_" + key)
+class Keyboard:
+    def __init__(self):
+        # Mapeamento estendido para facilitar a vida do aluno
+        self.mapa = {
+            "LEFT": pygame.K_LEFT, "RIGHT": pygame.K_RIGHT,
+            "UP": pygame.K_UP, "DOWN": pygame.K_DOWN,
+            "SPACE": pygame.K_SPACE, "ESC": pygame.K_ESCAPE,
+            "ENTER": pygame.K_RETURN, "LSHIFT": pygame.K_LSHIFT
+        }
+
+    def _get_code(self, key):
+        if isinstance(key, str):
+            key = key.upper()
+            if key in self.mapa:
+                return self.mapa[key]
+            return getattr(pygame, f"K_{key.lower()}", None)
         return key
+
+    def key_pressed(self, key):
+        """Verifica se a tecla está sendo segurada (Input contínuo)."""
+        codigo = self._get_code(key)
+        return pygame.key.get_pressed()[codigo] if codigo else False
+
+    def key_down(self, key):
+        """Verifica se a tecla foi apertada NESTE frame (Único)."""
+        codigo = self._get_code(key)
+        janela = Window.get_instance()
+        for evento in janela.eventos:
+            if evento.type == pygame.KEYDOWN and evento.key == codigo:
+                return True
+        return False
+
+    def draw_debug(self, x=10, y=10):
+        """Debug: Mostra teclas detectadas no frame."""
+        janela = Window.get_instance()
+        for evento in janela.eventos:
+            if evento.type == pygame.KEYDOWN:
+                janela.draw_text(f"Tecla: {pygame.key.name(evento.key)}", x, y, cor="red")

@@ -1,63 +1,88 @@
-# Pygame and system modules
-import sys
 import pygame
-from pygame.locals import *
-from . import window
-from . import gameobject
+from .gameobject import GameObject
+from .window import Window
 
-# Initializes pygame's modules
-pygame.init()
+"""
+===============================================================================
+POWER PPLAY 2.0 - Framework de Alta Performance para Desenvolvimento de Jogos
+===============================================================================
+Desenvolvedor Líder e Arquiteto da Versão 2.0: 
+    Kauã Neves Jesus de Paula
 
-# Loads an image (with colorkey and alpha)
-def load_image(name, colorkey=None, alpha=False):
-    """loads an image into memory"""
-    image = pygame.image.load(name)
-    if alpha:image = image.convert_alpha()
-    else:image=image.convert()
-    if colorkey is not None:
-        if colorkey is -1:
-            colorkey = image.get_at((0,0))
-        image.set_colorkey(colorkey, RLEACCEL)
-    return image, image.get_rect()
-        
-"""GameImage is the base class to deal with images"""
-class GameImage(gameobject.GameObject):
+Ano de Lançamento: 2026
+Instituição: Universidade Federal Fluminense (IC-UFF) - Niterói, RJ
+-------------------------------------------------------------------------------
+Este software é uma evolução profunda e modernização da biblioteca PPlay,
+originalmente concebida pela Equipe PPlay:
+    Prof. Esteban Clua, Prof. Anselmo Montenegro, Gabriel Saldanha,
+    Adônis Gasiglia, Yuri Nogueira e Sergio Herman.
+===============================================================================
+"""
+
+class GameImage(GameObject):
     """
-    Creates a GameImage from the specified file.
-    The width and height are obtained based on the image file.
+    GameImage cuida de carregar, armazenar e desenhar imagens na tela.
+    Inclui um sistema de cache para evitar carregamentos redundantes do disco.
     """
-    def __init__(self, image_file):
-        # Parent constructor must be called first
-        gameobject.GameObject.__init__(self)
+    
+    # Nosso "Almoxarifado" de imagens (Cache)
+    # Chave: nome do arquivo, Valor: superfície do pygame carregada
+    _resource_cache = {}
+
+    def __init__(self, caminho_imagem):
+        super().__init__()
         
-        # Loads image from the source, converts to fast-blitting format
-        self.image = pygame.image.load(image_file).convert_alpha()
-        # Gets the image pygame.Rect
+        # Tenta buscar do cache primeiro
+        if caminho_imagem in GameImage._resource_cache:
+            self.image = GameImage._resource_cache[caminho_imagem]
+        else:
+            # Se não estiver lá, carrega do disco e otimiza
+            try:
+                # convert_alpha() faz o blit ser até 5x mais rápido
+                self.image = pygame.image.load(caminho_imagem).convert_alpha()
+                # Guarda no cache para o próximo objeto que pedir
+                GameImage._resource_cache[caminho_imagem] = self.image
+            except pygame.error:
+                print(f"ERRO: Não foi possível carregar a imagem: {caminho_imagem}")
+                # Cria uma superfície rosa choque temporária para não crashar o jogo
+                self.image = pygame.Surface((32, 32))
+                self.image.fill((255, 0, 255))
+
+        # Define as dimensões do GameObject baseadas na imagem
+        self.width = self.image.get_width()
+        self.height = self.image.get_height()
+        
+        # Rect interno para operações do Pygame
         self.rect = self.image.get_rect()
-        
-        # Size
-        self.width = self.rect.width
-        self.height = self.rect.height
 
-        
-        
-
-    """Draws the image on the screen"""
     def draw(self):
-        # A instance of the Window screen
-        # Window object must've been instatiated
-        # draw_rect is necessary to readjust the image position given .x and .y
-        self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
-        window.Window.get_screen().blit(self.image, self.rect)
+        """Desenha a imagem na tela aplicando escala, rotação e transparência."""
+        # Aplica transparência
+        imagem_transformada = self.image.copy()
+        imagem_transformada.set_alpha(self.transparency)
+        
+        # Aplica rotação
+        if self.rotation != 0:
+            imagem_transformada = pygame.transform.rotate(imagem_transformada, self.rotation)
+        
+        # Aplica escala
+        if self.scale_x != 1.0 or self.scale_y != 1.0:
+            nova_w = max(1, int(self.width * self.scale_x))
+            nova_h = max(1, int(self.height * self.scale_y))
+            imagem_transformada = pygame.transform.scale(imagem_transformada, (nova_w, nova_h))
+        
+        # Atualizamos o rect interno antes de desenhar
+        self.rect.x = self.x
+        self.rect.y = self.y
+        
+        # Pega a tela da Window e desenha
+        Window.get_screen().blit(imagem_transformada, self.rect)
 
-    """Sets the (X,Y) image position on the screen"""
-    def set_position(self, x, y):
-        self.x = x
-        self.y = y
+    def draw_collision_box(self, cor=(0, 255, 0)):
+        """Método de Debug: Desenha a caixa de colisão do objeto."""
+        pygame.draw.rect(Window.get_screen(), cor, (self.x, self.y, self.width, self.height), 1)
 
-    """Checks collision with hitmask"""
-    def collided_perfect(self, target):
-        # Module import
-        from . import collision
-
-        return collision.Collision.collided_perfect(self, target)
+    @classmethod
+    def get_cache_size(cls):
+        """Retorna quantas imagens únicas estão carregadas na memória."""
+        return len(cls._resource_cache)

@@ -1,169 +1,116 @@
-# Pygame and System Modules
-import sys
-import time
 import pygame
-from . import window
-from . import gameimage
-from pygame.locals import *
+from .gameimage import GameImage
+from .window import Window
+from .camera import Camera
 
-# Initializes pygame's modules
-pygame.init()
+"""
+===============================================================================
+POWER PPLAY 2.0 - Framework de Alta Performance para Desenvolvimento de Jogos
+===============================================================================
+Desenvolvedor Líder e Arquiteto da Versão 2.0: 
+    Kauã Neves Jesus de Paula
 
-"""An Animation class for frame-control."""
-class Animation(gameimage.GameImage):
+Ano de Lançamento: 2026
+Instituição: Universidade Federal Fluminense (IC-UFF) - Niterói, RJ
+-------------------------------------------------------------------------------
+Este software é uma evolução profunda e modernização da biblioteca PPlay,
+originalmente concebida pela Equipe PPlay:
+    Prof. Esteban Clua, Prof. Anselmo Montenegro, Gabriel Saldanha,
+    Adônis Gasiglia, Yuri Nogueira e Sergio Herman.
+===============================================================================
+"""
+
+
+class Animation(GameImage):
     """
-    Creates an Animation that is composed by N frames.
-    The method set_sequence_time must be called right after.
-    Must note that the nnumber of frames will be automatically
-    computated: if the image has 100px width and total_frames = 10,
-    each frame will have 10px width.
+    Gerencia sequências de frames (Spritesheets) com controle de tempo
+    baseado em Delta Time e suporte a Câmera.
     """
-    def __init__(self, image_file, total_frames, loop=True):
-        # Parent's constructor must be first-called
-        gameimage.GameImage.__init__(self, image_file)
-
-        # A Cast to force it to be a float division
-        self.width = self.width/float(total_frames)  # The width of each frame
-        self.height = self.height
-
-        # Playing Control
-        self.playing = True
-        self.drawable = True
-        self.loop = loop
-
+    def __init__(self, caminho_imagem, total_frames, loop=True):
+        super().__init__(caminho_imagem)
+        
         self.total_frames = total_frames
-        self.initial_frame = 0
-        self.curr_frame = 0
-        self.final_frame = total_frames
-
-        # The duration of each frame
-        self.frame_duration = []
-        self.total_duration = 0
-
-        # The actual time in ms
-        self.last_time = int(round(time.time() * 1000))
-
-        self.set_sequence(0, self.total_frames, self.loop)
-
+        self.loop = loop
         
-    #-----------------------SEQUENCE SETTERS-----------------
-    """
-    Sets some aspects of the sequence, init/final frame, loop..
-    """
-    def set_sequence(self, initial_frame, final_frame, loop=True):
-        self.set_initial_frame(initial_frame)
-        self.set_curr_frame(initial_frame)
-        self.set_final_frame(final_frame)
-        self.set_loop(loop)
-
-    """Defines each frame duration and the sequence (time / total_frames)."""
-    def set_sequence_time(self, initial_frame, final_frame,
-                          total_duration, loop=True):
-        self.set_sequence(initial_frame, final_frame, loop)
-        time_ms = int(round(total_duration / float(final_frame - initial_frame + 1)))
-        for x in range(initial_frame, final_frame):
-            self.frame_duration.append(total_duration)
-
-    """Sets the time for all frames."""
-    def set_total_duration(self, time_ms):
-        time_frame = float(time_ms) / self.total_frames
-        self.total_duration = time_frame * self.total_frames
-        for x in range(0, self.total_frames):
-            self.frame_duration.append(time_frame)
-
-    #-----------------------DRAW&UPDATE METHODS--------------------
-    """Method responsible for performing the change of frames."""
-    def update(self):
-        if(self.playing):
-            time_ms = int(round(time.time() * 1000)) #gets the curr time in ms
-            if((time_ms - self.last_time > self.frame_duration[self.curr_frame])
-               and (self.final_frame != 0)):
-                self.curr_frame += 1
-                self.last_time = time_ms
-            if((self.curr_frame == self.final_frame) and (self.loop)):
-                self.curr_frame = self.initial_frame
-            else:
-                if((not self.loop) and (self.curr_frame + 1 >= self.final_frame)):
-                    self.curr_frame = self.final_frame - 1
-                    self.playing = False
-            
-    """Draws the current frame on the screen."""
-    def draw(self):
-        if(self.drawable):
-            # Clips the frame (rect on the image)
-            clip_rect = pygame.Rect(self.curr_frame*self.width,
-                                    0,
-                                    self.width,
-                                    self.height
-                                    )
-
-            # Updates the pygame rect based on new positions values
-            self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
-
-            # Blits the image with the rect and clip_rect clipped
-            window.Window.get_screen().blit(self.image, self.rect, area=clip_rect)
+        # Ajusta a largura para o tamanho de UM frame
+        self.width = self.width / total_frames
         
-    
-    #----------------------PLAYING CONTROL METHODS----------------------
-    """Stops execution and puts the initial frame as the current frame."""
-    def stop(self):
-        self.curr_frame = self.initial_frame
-        self.playing = False
-
-    """Method responsible for starting the execution of the animation."""
-    def play(self):
-        self.playing = True
-
-    """Method responsible fo pausing the Animation."""
-    def pause(self):
-        self.playing = False
+        self.frame_atual = 0
+        self.rodando = True
         
-    """Returns true if the Animation is being executed."""
-    def is_playing(self):
-        return self.playing
+        # Controle de tempo (em segundos)
+        self.tempo_por_frame = 0.1  # Padrão: 10 FPS
+        self.tempo_acumulado = 0
 
-    """Returns if the Animation is looping."""
-    def is_looping(self):
-        return self.loop
+    def set_total_duration(self, tempo_total_ms):
+        """Define a duração total de uma volta completa da animação."""
+        tempo_total_seg = tempo_total_ms / 1000.0
+        self.tempo_por_frame = tempo_total_seg / self.total_frames
 
-    """Sets if the Animation will loop or not."""
+    def set_curr_frame(self, frame):
+        """Define manualmente o frame atual (0 até total_frames - 1)."""
+        if 0 <= frame < self.total_frames:
+            self.frame_atual = frame
+
+    def get_curr_frame(self):
+        """Retorna o índice do frame sendo exibido."""
+        return self.frame_atual
+
     def set_loop(self, loop):
+        """Define se a animação deve recomeçar ao chegar no fim."""
         self.loop = loop
 
-    """Does not allow the Animation to be drawn on the screen."""
-    def hide(self):
-        self.drawable = False
+    def update(self):
+        """Troca os frames baseando-se no tempo real transcorrido (Delta Time)."""
+        if not self.rodando:
+            return
 
-    """Allows the Animation to be drawn on the screen."""
-    def unhide(self):
-        self.drawable = True
+        self.tempo_acumulado += Window.get_instance().delta_time()
 
-    #----------------GETTER&SETTER METHODS----------------       
-    """Gets the total duration - sum of all time frames."""
-    def get_total_duration(self):
-        return self.total_duration
-    
-    """Sets the initial frame of the sequence of frames."""
-    def set_initial_frame(self, frame):
-        self.initial_frame = frame
+        if self.tempo_acumulado >= self.tempo_por_frame:
+            self.frame_atual += 1
+            self.tempo_acumulado = 0
 
-    """Returns the initial frame of the sequence."""
-    def get_initial_frame(self):
-        return self.initial_frame
+            if self.frame_atual >= self.total_frames:
+                if self.loop:
+                    self.frame_atual = 0
+                else:
+                    self.frame_atual = self.total_frames - 1
+                    self.rodando = False
 
-    """Sets the final frame of the sequence of frames."""
-    def set_final_frame(self, frame):
-        self.final_frame = frame
+    def draw(self):
+        """Desenha o frame atual aplicando transformações e suporte a Câmera."""
+        cam = Camera.get_instance()
+        
+        # Coordenadas virtuais para suporte a Câmera
+        draw_x = cam.transform_x(self.x) if cam else self.x
+        draw_y = cam.transform_y(self.y) if cam else self.y
 
-    """Returns the number of final frame of the sequence."""
-    def get_final_frame(self):
-        return self.final_frame
+        # Define o retângulo de corte na Spritesheet
+        area_corte = pygame.Rect(
+            self.frame_atual * self.width, 0,
+            self.width, self.height
+        )
+        
+        # Extrai o frame da spritesheet
+        frame_surface = self.image.subsurface(area_corte).copy()
+        
+        # Aplica transparência
+        frame_surface.set_alpha(self.transparency)
+        
+        # Aplica rotação
+        if self.rotation != 0:
+            frame_surface = pygame.transform.rotate(frame_surface, self.rotation)
+        
+        # Aplica escala
+        if self.scale_x != 1.0 or self.scale_y != 1.0:
+            nova_w = max(1, int(self.width * self.scale_x))
+            nova_h = max(1, int(self.height * self.scale_y))
+            frame_surface = pygame.transform.scale(frame_surface, (nova_w, nova_h))
+        
+        # Desenha apenas o pedaço (frame) transformado no buffer virtual
+        Window.get_screen().blit(frame_surface, (draw_x, draw_y))
 
-    """Sets the current frame that will be drawn."""
-    def set_curr_frame(self, frame):
-        self.curr_frame = frame
-
-    """Gets the current frame that will be drawn."""
-    def get_curr_frame(self):
-        return self.curr_frame
-    
+    def play(self): self.rodando = True
+    def stop(self): self.rodando = False; self.frame_atual = 0
+    def pause(self): self.rodando = False
