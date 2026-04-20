@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 import math
-import random
 from pathlib import Path
 from typing import Iterable
 
 import pygame
 
 from external.pplay.sprite import Sprite
-from external.pplay.window import Window
 
 from src.system.input import Input
-from src.entities.weapon import FireWeapon, IceWeapon, Weapon, WindWeapon
+from src.utils.window import get_screen
 
 
 class Player:
@@ -31,40 +29,6 @@ class Player:
 
 		self.sprite = Sprite(str(self.assets_dir / "player.png"))
 		self.sprite.set_position(spawn_x, spawn_y)
-
-		self.weapon_sprites: dict[str, Sprite] = {
-			"ice_sword": Sprite(str(self.assets_dir / "ice_sword.png")),
-			"fire_sword": Sprite(str(self.assets_dir / "fire_sword.png")),
-			"wind_sword": Sprite(str(self.assets_dir / "wind_sword.png")),
-		}
-
-		self.weapons: dict[str, Weapon] = {
-			"ice_sword": IceWeapon(
-				name="ice_sword",
-				damage=12,
-				attack_radius=80.0,
-				slow_factor=0.55,
-				slow_duration=1.2,
-				freeze_hits=3,
-				freeze_duration=1.5,
-			),
-			"fire_sword": FireWeapon(
-				name="fire_sword",
-				damage=10,
-				attack_radius=80.0,
-				burn_dps=6.0,
-				burn_duration=2.5,
-			),
-			"wind_sword": WindWeapon(
-				name="wind_sword",
-				damage=9,
-				attack_radius=110.0,
-			),
-		}
-
-		self.weapon_name = random.choice(list(self.weapon_sprites.keys()))
-		self.weapon_sprite = self.weapon_sprites[self.weapon_name]
-		self.weapon = self.weapons[self.weapon_name]
 
 		self.attributes = {
 			"max_health": max_health,
@@ -99,15 +63,7 @@ class Player:
 		self._flash_surface: pygame.Surface | None = None
 
 		self.regen_timer = 0.0
-
-		self.attack_timer = 0.0
-		self.swing_timer = 0.0
-		self.swing_duration = 0.32
-		self.swing_arc = math.radians(120)
-		self.swing_trail_steps = 4
-		self.swing_trail_spacing = 0.08
 		self.facing = (0.0, 1.0)
-		self._pending_attack = False
 
 		self.init_progression()
 
@@ -154,20 +110,6 @@ class Player:
 			if length > 0.0:
 				self.facing = (dx / length, dy / length)
 
-		if keyboard.key_pressed("1"):
-			self.weapon_name = "ice_sword"
-			self.weapon_sprite = self.weapon_sprites[self.weapon_name]
-			self.weapon = self.weapons[self.weapon_name]
-		if keyboard.key_pressed("2"):
-			self.weapon_name = "fire_sword"
-			self.weapon_sprite = self.weapon_sprites[self.weapon_name]
-			self.weapon = self.weapons[self.weapon_name]
-		if keyboard.key_pressed("3"):
-			self.weapon_name = "wind_sword"
-			self.weapon_sprite = self.weapon_sprites[self.weapon_name]
-			self.weapon = self.weapons[self.weapon_name]
-
-		self._update_attack(dt, is_moving)
 		self._update_invulnerability(dt)
 		self._update_regen(dt)
 
@@ -185,10 +127,10 @@ class Player:
 			if enemy_center is None or enemy_radius is None:
 				continue
 
-			dx = player_center_x - enemy_center[0]
-			dy = player_center_y - enemy_center[1]
+			enemy_dx = enemy_center[0] - player_center_x
+			enemy_dy = enemy_center[1] - player_center_y
 
-			dist_sq = dx * dx + dy * dy
+			dist_sq = enemy_dx * enemy_dx + enemy_dy * enemy_dy
 			min_dist = self.radius + float(enemy_radius)
 
 			if dist_sq >= min_dist * min_dist:
@@ -199,7 +141,16 @@ class Player:
 				max_damage = enemy_damage
 
 			if dist_sq <= 0.000001:
-				dx, dy = 1.0, 0.0
+				enemy_dx, enemy_dy = 1.0, 0.0
+
+			enemy_move = getattr(enemy, "move_by", None)
+			if callable(enemy_move):
+				dist = math.sqrt(max(dist_sq, 0.000001))
+				overlap = max(0.0, min_dist - dist)
+				if overlap > 0.0:
+					nx = enemy_dx / dist
+					ny = enemy_dy / dist
+					enemy_move(nx * overlap, ny * overlap)
 
 		if collided and max_damage > 0:
 			self.take_damage(max_damage)
@@ -216,44 +167,8 @@ class Player:
 
 		return True
 
-	def try_attack(self, enemies: Iterable[object]) -> int:
-		attack_center_x, attack_center_y = self.center
-		radius_sq = self.weapon.attack_radius * self.weapon.attack_radius
-
-		hits = 0
-
-		damage = self._calculate_damage()
-
-		for enemy in enemies:
-			enemy_center = getattr(enemy, "center", None)
-
-			if enemy_center is None:
-				continue
-
-			enemy_x, enemy_y = enemy_center
-			dx = enemy_x - attack_center_x
-			dy = enemy_y - attack_center_y
-
-			if dx * dx + dy * dy <= radius_sq:
-				apply_fn = getattr(self.weapon, "apply_with_damage", None)
-
-				if callable(apply_fn):
-					if apply_fn(enemy, damage=damage):
-						hits += 1
-				elif self.weapon.apply(enemy, damage=damage):
-					hits += 1
-
-		return hits
-
-	def consume_attack(self) -> bool:
-		if self._pending_attack:
-			self._pending_attack = False
-			return True
-		return False
-
 	def draw(self, camera_x: float = 0.0, camera_y: float = 0.0) -> None:
 		self._draw_with_camera(self.sprite, camera_x, camera_y)
-		self._draw_weapon(camera_x, camera_y)
 		self._draw_health_bar(camera_x, camera_y)
 		self._draw_damage_flash(camera_x, camera_y)
 
@@ -265,60 +180,9 @@ class Player:
 		sprite.draw()
 		sprite.set_position(world_x, world_y)
 
-	def _draw_weapon(self, camera_x: float, camera_y: float) -> None:
-		px, py = self.center
-		fx, fy = self.facing
-		base_angle = math.atan2(fy, fx)
-		phase = 0.0
-
-		if self.swing_duration > 0.0 and self.swing_timer > 0.0:
-			phase = 1.0 - (self.swing_timer / self.swing_duration)
-
-		ease = phase * phase * (3.0 - 2.0 * phase)
-		swing = math.sin(ease * math.pi) * self.swing_arc
-		angle = base_angle + swing
-		self.weapon_sprite.set_rotation(math.degrees(angle))
-
-		offset = max(self.sprite.width, self.sprite.height) * 0.55
-		wx = px + math.cos(angle) * offset
-		wy = py + math.sin(angle) * offset
-
-		self.weapon_sprite.set_position(
-			wx - (self.weapon_sprite.width * 0.5),
-			wy - (self.weapon_sprite.height * 0.5),
-		)
-
-		screen = Window.get_screen()
-		if screen is not None and self.swing_timer > 0.0:
-			base_image = self.weapon_sprite.image
-			for step in range(self.swing_trail_steps, 0, -1):
-				trail_phase = max(0.0, phase - step * self.swing_trail_spacing)
-				if trail_phase <= 0.0:
-					continue
-				ease_trail = trail_phase * trail_phase * (3.0 - 2.0 * trail_phase)
-				trail_swing = math.sin(ease_trail * math.pi) * self.swing_arc
-				trail_angle = base_angle + trail_swing
-				trail_offset = max(self.sprite.width, self.sprite.height) * 0.55
-				trail_x = px + math.cos(trail_angle) * trail_offset
-				trail_y = py + math.sin(trail_angle) * trail_offset
-				trail_surface = pygame.transform.rotate(base_image, math.degrees(trail_angle))
-				trail_alpha = int(140 * (step / self.swing_trail_steps))
-				trail_surface.set_alpha(trail_alpha)
-				screen.blit(
-					trail_surface,
-					(
-						trail_x - camera_x - trail_surface.get_width() * 0.5,
-						trail_y - camera_y - trail_surface.get_height() * 0.5,
-					),
-				)
-
-		self._draw_with_camera(self.weapon_sprite, camera_x, camera_y)
 
 	def _draw_health_bar(self, camera_x: float, camera_y: float) -> None:
-		screen = Window.get_screen()
-
-		if screen is None:
-			return
+		screen = get_screen()
 
 		bar_width = int(self.sprite.width)
 		bar_height = 6
@@ -336,10 +200,7 @@ class Player:
 		if self.invuln_left <= 0.0 or not self._blink_on:
 			return
 
-		screen = Window.get_screen()
-
-		if screen is None:
-			return
+		screen = get_screen()
 
 		width = int(self.sprite.width)
 		height = int(self.sprite.height)
@@ -355,21 +216,6 @@ class Player:
 			self._flash_surface,
 			(int(self.sprite.x - camera_x), int(self.sprite.y - camera_y)),
 		)
-
-	def _update_attack(self, dt: float, is_moving: bool) -> None:
-		attack_speed = max(0.1, self.attributes["attack_speed"])
-		interval = 1.0 / attack_speed
-		self.attack_timer = max(0.0, self.attack_timer - dt)
-
-		if self.attack_timer <= 0.0 and is_moving:
-			self.attack_timer = interval
-			self.swing_timer = self.swing_duration
-			self._pending_attack = True
-		else:
-			self._pending_attack = False
-
-		if self.swing_timer > 0.0:
-			self.swing_timer = max(0.0, self.swing_timer - dt)
 
 	def _update_invulnerability(self, dt: float) -> None:
 		if self.invuln_left <= 0.0:
@@ -390,9 +236,6 @@ class Player:
 			self.regen_timer = 0.0
 			heal = self.max_health * self.attributes["health_regen"]
 			self.health = min(self.max_health, self.health + heal)
-
-	def _calculate_damage(self) -> int:
-		return max(1, int(self.weapon.damage + self.attributes["strength"]))
 
 	def init_progression(self) -> None:
 		self.level = 1
@@ -435,6 +278,7 @@ class Player:
 			self.attributes[name] += 20
 		elif name == "attack_speed":
 			self.attributes[name] += 0.2
+
 		return True
 
 	def distance_to(self, target_x: float, target_y: float) -> float:

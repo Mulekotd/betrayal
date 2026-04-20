@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Protocol
+
+import pygame
 
 from external.pplay.window import Window
 
 from src.system.audio import Audio
 from src.system.input import Input
+from src.system.services import GameServices
 
 
 class SceneContract(Protocol):
@@ -40,17 +44,43 @@ class Game:
 		self.audio = Audio()
 		self.running = False
 		self.current_scene: SceneContract | None = None
+		self.services: GameServices | None = None
 
 	def initialize(self) -> None:
 		self.window = Window(self.width, self.height)
 		self.window.set_title(self.title)
 		self.window.set_background_color(list(self.background_color))
 
+		assets_dir = Path(__file__).resolve().parent.parent / "assets"
+		images_dir = assets_dir / "images"
+		fonts_dir = assets_dir / "fonts"
+		font_path = fonts_dir / "Monogram.ttf"
+
+		self.services = GameServices(
+			assets_dir=assets_dir,
+			images_dir=images_dir,
+			fonts_dir=fonts_dir,
+			font_path=font_path,
+		)
+
+		icon_path = Path(__file__).resolve().parent.parent / "assets" / "images" / "icon.ico"
+
+		if icon_path.exists():
+			try:
+				icon_surface = pygame.image.load(str(icon_path))
+				pygame.display.set_icon(icon_surface)
+			except pygame.error:
+				pass
+
 		self.input = Input()
 		# Use the Keyboard/Mouse objects created by Window.
 		window_cls: Any = Window
+		
 		self.input.keyboard = window_cls.get_keyboard()
 		self.input.mouse = window_cls.get_mouse()
+
+		pygame.mouse.set_visible(False)
+		self.input.mouse.hide()
 
 	def set_scene(self, scene: SceneContract) -> None:
 		self.current_scene = scene

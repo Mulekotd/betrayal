@@ -2,15 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, cast
+from typing import Any, Callable, cast
 
 import pygame
 
 from external.pplay.gameimage import GameImage
-from external.pplay.window import Window
 
 from src.engine.game import Game
 from src.scenes.game_scene import GameScene
+from src.system.services import GameServices
+from src.utils.window import get_screen, get_window
 
 
 @dataclass
@@ -27,51 +28,56 @@ class MenuButton:
 
 
 class MenuScene:
-	def __init__(self, game: Game, world_width: int, world_height: int) -> None:
+	def __init__(self, game: Game, services: GameServices, world_width: int, world_height: int) -> None:
 		self.game = game
+		self.services = services
 		self.world_width = world_width
 		self.world_height = world_height
 
-		assets_dir = Path(__file__).resolve().parent.parent / "assets" / "images"
-		self.logo = GameImage(str(assets_dir / "logo.png"))
-		self.logo_scale = 0.5
-		self.logo_padding = 24
-		self.logo_button_gap = 28
+		logo_path = self.services.images_dir / "logo_lg.png"
+
+		if not logo_path.exists():
+			logo_path = self.services.images_dir / "logo.png"
+
+		self.logo = GameImage(str(logo_path))
+		self.logo_scale = 0.78
 		self.logo.scale_x = self.logo_scale
 		self.logo.scale_y = self.logo_scale
 
-		center_x = world_width // 2
-		button_width = 260
-		button_height = 56
-		start_y = int(world_height * 0.48)
-		gap = 18
+		self.menu_font = self.services.fonts.get(50)
+		self.menu_color = (120, 210, 235)
+		self.menu_hover_color = (170, 235, 255)
+		self.menu_shadow_color = (45, 85, 105)
 
-		self.buttons = [
-			MenuButton(
-				label="START",
-				x=center_x - button_width // 2,
-				y=start_y,
-				width=button_width,
-				height=button_height,
-				action=self._start_game,
-			),
-			MenuButton(
-				label="OPTIONS",
-				x=center_x - button_width // 2,
-				y=start_y + button_height + gap,
-				width=button_width,
-				height=button_height,
-				action=self._placeholder,
-			),
-			MenuButton(
-				label="QUIT",
-				x=center_x - button_width // 2,
-				y=start_y + (button_height + gap) * 2,
-				width=button_width,
-				height=button_height,
-				action=self._quit_game,
-			),
+		padding = 32
+		start_x = padding
+		start_y = padding
+		gap = 12
+
+		labels = [
+			("PLAY", self._start_game),
+			("OPTIONS", self._placeholder),
+			("QUIT", self._quit_game),
 		]
+
+		self.buttons = []
+		cursor_y = start_y
+
+		for label, action in labels:
+			surface = self.menu_font.render(label, True, (255, 255, 255))
+
+			self.buttons.append(
+				MenuButton(
+					label=label,
+					x=start_x,
+					y=cursor_y,
+					width=surface.get_width(),
+					height=surface.get_height(),
+					action=action,
+				)
+			)
+
+			cursor_y += surface.get_height() + gap
 
 		self._hover_index: int | None = None
 
@@ -80,89 +86,64 @@ class MenuScene:
 
 	def update(self, dt: float, input_manager) -> None:
 		_ = dt
-		mouse = input_manager.mouse if input_manager is not None else self._get_window().mouse
+		mouse = input_manager.mouse if input_manager is not None else get_window().mouse
 		mx, my = mouse.get_position()
 
 		self._hover_index = None
-		
 		for index, button in enumerate(self.buttons):
 			if button.contains(mx, my):
 				self._hover_index = index
-
 				if mouse.button_down(mouse.LEFT):
 					button.action()
 				break
 
-	def render(self, window) -> None:
-		screen = self._get_screen()
-		screen.fill((20, 12, 14))
+	def render(self, window: Any) -> None:
+		_ = window
+		screen = get_screen()
+
+		screen.fill((10, 16, 20))
+		self._draw_background_haze()
 		self._draw_logo()
-		self._draw_buttons(window)
+		self._draw_buttons()
+
+	def _draw_background_haze(self) -> None:
+		screen = get_screen()
+
+		haze = pygame.Surface((self.world_width, self.world_height), pygame.SRCALPHA)
+		pygame.draw.circle(haze, (40, 90, 110, 120), (int(self.world_width * 0.35), int(self.world_height * 0.6)), int(self.world_width * 0.55))
+		screen.blit(haze, (0, 0))
 
 	def _draw_logo(self) -> None:
 		logo_w = int(self.logo.width * self.logo_scale)
-		logo_h = int(self.logo.height * self.logo_scale)
-		
-		logo_x = (self.world_width - logo_w) // 2
-		logo_y = max(self.logo_padding, self.buttons[0].y - logo_h - self.logo_button_gap)
-
+		logo_x = self.world_width - logo_w - 32
+		logo_y = 32
 		self.logo.set_position(logo_x, logo_y)
 		self.logo.draw()
 
-	def _draw_buttons(self, window) -> None:
+	def _draw_buttons(self) -> None:
 		for index, button in enumerate(self.buttons):
 			is_hover = index == self._hover_index
-			
-			fill_color = (66, 86, 168) if is_hover else (54, 72, 140)
-			border_color = (220, 190, 110) if is_hover else (180, 150, 90)
+			screen = get_screen()
 
-			screen = self._get_screen()
+			color = self.menu_hover_color if is_hover else self.menu_color
+			glow = self.menu_shadow_color
 
-			pygame.draw.rect(
-				screen,
-				fill_color,
-				(button.x, button.y, button.width, button.height),
-				border_radius=8,
-			)
-
-			pygame.draw.rect(
-				screen,
-				border_color,
-				(button.x, button.y, button.width, button.height),
-				2,
-				border_radius=8,
-			)
-
-			window.draw_text(
-				button.label,
-				button.x + button.width // 2 - 36,
-				button.y + 16,
-				size=24,
-				color=(255, 255, 255),
-				font_name="Arial",
-			)
+			shadow_surface = self.menu_font.render(button.label, True, glow)
+			screen.blit(shadow_surface, (button.x + 2, button.y + 2))
+			text_surface = self.menu_font.render(button.label, True, color)
+			screen.blit(text_surface, (button.x, button.y))
 
 	def _start_game(self) -> None:
-		self.game.set_scene(GameScene(world_width=self.world_width, world_height=self.world_height))
+		self.game.set_scene(
+			GameScene(
+				services=self.services,
+				world_width=self.world_width,
+				world_height=self.world_height,
+			)
+		)
 
 	def _quit_game(self) -> None:
-		self._get_window().close()
+		get_window().close()
 
 	def _placeholder(self) -> None:
 		pass
-
-	def _get_screen(self) -> pygame.Surface:
-		screen = Window.get_screen()
-
-		if screen is None:
-			raise RuntimeError("Window screen is not initialized.")
-
-		return screen
-
-	def _get_window(self) -> Window:
-		window = cast(Window, Window.get_instance())
-		
-		if window is None:
-			raise RuntimeError("Window instance is not initialized.")
-
-		return window

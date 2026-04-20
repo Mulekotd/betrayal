@@ -27,10 +27,10 @@ class Audio:
 	def set_volume(self, value: int) -> None:
 		self._volume = max(0, min(100, int(value)))
 		self._audio_available = self._ensure_audio_backend()
+
 		if not self._audio_available:
 			return
 
-		# Power PPlay 2.0 already provides global audio channels control.
 		SoundManager.set_sfx_volume(self._volume)
 		SoundManager.set_music_volume(self._volume)
 
@@ -92,6 +92,7 @@ class Audio:
 			return
 
 		music = self._music.get(self._music_key)
+
 		if music is None:
 			return
 
@@ -105,6 +106,7 @@ class Audio:
 			return
 
 		music = self._music.get(self._music_key)
+
 		if music is not None:
 			music.stop()
 
@@ -116,6 +118,7 @@ class Audio:
 			return
 
 		music = self._music.get(self._music_key)
+
 		if music is not None:
 			music.pause()
 
@@ -127,6 +130,7 @@ class Audio:
 			return
 
 		music = self._music.get(self._music_key)
+
 		if music is not None:
 			music.unpause()
 
@@ -138,15 +142,18 @@ class Audio:
 			return bool(pygame.mixer.get_busy())
 
 		music = self._music.get(key)
+
 		if music is not None:
 			return music.is_playing()
 
 		sound = self._sounds.get(key)
+
 		if sound is None:
 			return False
 
 		# Sound class wraps pygame.mixer.Sound at attribute `sound`.
 		raw_sound = getattr(sound, "sound", None)
+
 		if raw_sound is None:
 			return False
 

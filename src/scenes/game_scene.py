@@ -5,19 +5,21 @@ import random
 from typing import Any
 
 import pygame
-
 from external.pplay.gameimage import GameImage
-from external.pplay.window import Window
 
 from src.entities.enemy import EnemyManager
 from src.entities.player import Player
 from src.system.camera import Camera
 from src.system.input import Input
+from src.system.hud import HUD
+from src.system.services import GameServices
+from src.utils.window import get_screen
 
 
 class GameScene:
-	def __init__(self, world_width: int, world_height: int) -> None:
-		assets_dir = Path(__file__).resolve().parent.parent / "assets" / "images"
+	def __init__(self, services: GameServices, world_width: int, world_height: int) -> None:
+		self.services = services
+		assets_dir = self.services.images_dir
 
 		self.viewport_width = world_width
 		self.viewport_height = world_height
@@ -31,6 +33,7 @@ class GameScene:
 			spawn_x=world_width * 0.5,
 			spawn_y=world_height * 0.5,
 		)
+		
 		self.player.init_progression()
         
 		self.enemy_manager = EnemyManager(
@@ -39,7 +42,6 @@ class GameScene:
 			world_height=world_height,
 		)
 
-		self.total_hits = 0
 		self.total_kills = 0
 
 		self.background_tile = self._load_background_tile(assets_dir)
@@ -52,9 +54,14 @@ class GameScene:
 		self.level_up_active = False
 		self.level_up_options: list[str] = []
 		self.level_up_hover: int | None = None
-		self.ui_font_small = pygame.font.SysFont("Arial", 16)
-		self.ui_font_medium = pygame.font.SysFont("Arial", 22)
-		self.ui_font_title = pygame.font.SysFont("Arial", 32, bold=True)
+		self.ui_font_medium = self.services.fonts.get(26)
+		self.ui_font_title = self.services.fonts.get(38)
+		self.hud = HUD(
+			viewport_width=self.viewport_width,
+			viewport_height=self.viewport_height,
+			fonts=self.services.fonts,
+			padding=32,
+		)
 
 	def handle_events(self, input_manager: Input | None) -> None:
 		_ = input_manager
@@ -68,18 +75,15 @@ class GameScene:
 			return
 
 		self.player.update(input_manager, dt, self.world_width, self.world_height)
-		hits = 0
-		if self.player.consume_attack():
-			hits = self.player.try_attack(self.enemy_manager.get_enemies())
-		self.total_hits += hits
-
 		before_update = len(self.enemy_manager.get_enemies())
 		xp_gained = self.enemy_manager.update(self.player, dt)
 		after_update = len(self.enemy_manager.get_enemies())
 
 		self.player.resolve_enemy_collisions(self.enemy_manager.get_enemies())
+
 		if xp_gained:
 			levels_gained = self.player.add_xp(xp_gained)
+
 			if levels_gained:
 				self.pending_level_ups += levels_gained
 				self._open_level_up()
@@ -98,8 +102,8 @@ class GameScene:
 
 		self.enemy_manager.draw(camera_x=self.camera.x, camera_y=self.camera.y)
 		self.player.draw(camera_x=self.camera.x, camera_y=self.camera.y)
-		self._draw_xp_bar()
-		self._draw_kills_counter()
+		self.hud.draw(self.player, self.total_kills)
+
 		if self.level_up_active:
 			self._draw_level_up_overlay()
 
@@ -112,45 +116,13 @@ class GameScene:
 
 		self.cursor.draw()
 
-	def _draw_xp_bar(self) -> None:
-		screen = self._get_screen()
-		bar_margin = 18
-		bar_height = 22
-		bar_width = max(0, self.viewport_width - (bar_margin * 2))
-		bar_x = bar_margin
-		bar_y = bar_margin
-
-		pygame.draw.rect(screen, (16, 18, 22), (bar_x, bar_y, bar_width, bar_height))
-
-		xp_to_next = max(1, int(self.player.xp_to_next))
-		fill_ratio = min(1.0, max(0.0, self.player.xp / xp_to_next))
-		fill_width = int(bar_width * fill_ratio)
-
-		if fill_width > 0:
-			pygame.draw.rect(screen, (30, 120, 255), (bar_x, bar_y, fill_width, bar_height))
-
-		label = f"LV {self.player.level}"
-		label_surface = self.ui_font_small.render(label, True, (255, 255, 255))
-		label_x = bar_x + bar_width - label_surface.get_width() - 8
-		label_y = bar_y + (bar_height - label_surface.get_height()) // 2
-		screen.blit(label_surface, (label_x, label_y))
-
-	def _draw_kills_counter(self) -> None:
-		screen = self._get_screen()
-		bar_margin = 18
-		bar_height = 22
-		label = f"Abates: {self.total_kills}"
-		label_surface = self.ui_font_small.render(label, True, (255, 255, 255))
-		label_x = bar_margin
-		label_y = bar_margin + bar_height + 6
-		screen.blit(label_surface, (label_x, label_y))
-
 	def _open_level_up(self) -> None:
 		available = [
 			name
 			for name in self.player.attribute_levels
 			if self.player.attribute_levels[name] < self.player.max_attribute_level
 		]
+
 		if not available:
 			self.pending_level_ups = 0
 			self.level_up_active = False
@@ -158,6 +130,7 @@ class GameScene:
 			return
 
 		random.shuffle(available)
+
 		self.level_up_options = available[:3]
 		self.level_up_hover = None
 		self.level_up_active = True
@@ -169,7 +142,7 @@ class GameScene:
 		panel_y = (self.viewport_height - panel_height) // 2
 		panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
 
-		option_height = 72
+		option_height = 78
 		option_gap = 14
 		option_x = panel_x + 28
 		option_width = panel_width - 56
@@ -191,10 +164,12 @@ class GameScene:
 		for index, rect in enumerate(option_rects):
 			if rect.collidepoint(mx, my):
 				self.level_up_hover = index
+
 				if mouse.button_down(mouse.LEFT):
 					attribute = self.level_up_options[index]
 					self.player.upgrade_attribute(attribute)
 					self.pending_level_ups = max(0, self.pending_level_ups - 1)
+
 					if self.pending_level_ups > 0:
 						self._open_level_up()
 					else:
@@ -204,7 +179,8 @@ class GameScene:
 					break
 
 	def _draw_level_up_overlay(self) -> None:
-		screen = self._get_screen()
+		screen = get_screen()
+
 		overlay = pygame.Surface((self.viewport_width, self.viewport_height), pygame.SRCALPHA)
 		overlay.fill((0, 0, 0, 140))
 		screen.blit(overlay, (0, 0))
@@ -231,6 +207,7 @@ class GameScene:
 			is_hover = index == self.level_up_hover
 			fill = (120, 120, 140) if is_hover else (96, 96, 112)
 			border = (220, 190, 110) if is_hover else (180, 150, 90)
+
 			pygame.draw.rect(screen, fill, rect, border_radius=8)
 			pygame.draw.rect(screen, border, rect, 2, border_radius=8)
 
@@ -246,7 +223,7 @@ class GameScene:
 			self._draw_procedural_background()
 			return
 
-		screen = self._get_screen()
+		screen = get_screen()
 
 		tile_width = int(self.background_tile.width)
 		tile_height = int(self.background_tile.height)
@@ -272,7 +249,7 @@ class GameScene:
 		end_x = self.viewport_width + tile_size
 		end_y = self.viewport_height + tile_size
 
-		screen = self._get_screen()
+		screen = get_screen()
 
 		for draw_x in range(start_x, end_x, tile_size):
 			for draw_y in range(start_y, end_y, tile_size):
@@ -280,24 +257,14 @@ class GameScene:
 				cell_y = int((draw_y + self.camera.y) // tile_size)
 				is_even = (cell_x + cell_y) % 2 == 0
 				color = (24, 28, 34) if is_even else (19, 22, 27)
+
 				pygame.draw.rect(screen, color, (draw_x, draw_y, tile_size, tile_size))
 
 	def _load_background_tile(self, assets_dir: Path) -> GameImage | None:
 		for filename in ("map_tile.png", "tile_0001.png", "logo.png"):
 			candidate = assets_dir / filename
+
 			if candidate.exists():
 				return GameImage(str(candidate))
+
 		return None
-
-	def _get_screen(self) -> pygame.Surface:
-		screen = Window.get_screen()
-		if screen is None:
-			raise RuntimeError("Window screen is not initialized.")
-		return screen
-
-	def _get_window(self) -> Window:
-		window = Window.get_instance()
-		if window is None:
-			raise RuntimeError("Window instance is not initialized.")
-		return window
-
