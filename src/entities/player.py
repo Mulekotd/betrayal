@@ -82,8 +82,22 @@ class Player:
 			self.sprite.y + self.sprite.height * 0.5,
 		)
 
-	def update(self, input_manager: Input, dt: float, world_width: int, world_height: int) -> None:
-		_ = (world_width, world_height)
+	def is_dead(self) -> bool:
+		return self.health <= 0.0
+
+	def update(
+		self,
+		input_manager: Input,
+		dt: float,
+		world_width: int,
+		world_height: int,
+		world_bounds: pygame.Rect | None = None,
+	) -> None:
+		if self.is_dead():
+			self._blink_on = False
+			self.invuln_left = 0.0
+			return
+
 		keyboard = input_manager.keyboard
 
 		dx = 0.0
@@ -102,6 +116,7 @@ class Player:
 
 		self.sprite.x += dx
 		self.sprite.y += dy
+		self._clamp_to_world(world_width, world_height, world_bounds)
 
 		is_moving = (dx != 0.0 or dy != 0.0)
 
@@ -113,6 +128,28 @@ class Player:
 		self._update_invulnerability(dt)
 		self._update_regen(dt)
 
+	def _clamp_to_world(self, world_width: int, world_height: int, world_bounds: pygame.Rect | None = None) -> None:
+		if world_bounds is None:
+			min_x = 0.0
+			max_x = float(world_width - self.sprite.width)
+			min_y = 0.0
+			max_y = float(world_height - self.sprite.height)
+		else:
+			min_x = float(world_bounds.left)
+			max_x = float(world_bounds.right - self.sprite.width)
+			min_y = float(world_bounds.top)
+			max_y = float(world_bounds.bottom - self.sprite.height)
+
+		if max_x < min_x:
+			self.sprite.x = min_x
+		else:
+			self.sprite.x = max(min_x, min(self.sprite.x, max_x))
+
+		if max_y < min_y:
+			self.sprite.y = min_y
+		else:
+			self.sprite.y = max(min_y, min(self.sprite.y, max_y))
+
 	def resolve_enemy_collisions(self, enemies: Iterable[object]) -> None:
 		max_damage = 0
 		collided = False
@@ -123,6 +160,7 @@ class Player:
 			enemy_center = getattr(enemy, "center", None)
 			enemy_radius = getattr(enemy, "radius", None)
 			enemy_damage = getattr(enemy, "damage", 0)
+			contact_damage = bool(getattr(enemy, "contact_damage", True))
 
 			if enemy_center is None or enemy_radius is None:
 				continue
@@ -137,7 +175,7 @@ class Player:
 				continue
 
 			collided = True
-			if enemy_damage > max_damage:
+			if contact_damage and enemy_damage > max_damage:
 				max_damage = enemy_damage
 
 			if dist_sq <= 0.000001:
@@ -156,7 +194,7 @@ class Player:
 			self.take_damage(max_damage)
 
 	def take_damage(self, amount: int) -> bool:
-		if self.invuln_left > 0.0:
+		if self.is_dead() or self.invuln_left > 0.0:
 			return False
 
 		reduced = max(1, int(amount - self.attributes["defense"]))
@@ -230,6 +268,9 @@ class Player:
 			self._blink_on = not self._blink_on
 
 	def _update_regen(self, dt: float) -> None:
+		if self.is_dead():
+			return
+
 		self.regen_timer += dt
 
 		if self.regen_timer >= 1.0:

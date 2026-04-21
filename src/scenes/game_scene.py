@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
+import math
 import random
 from typing import Any
 
 import pygame
 from external.pplay.gameimage import GameImage
 
+from src.engine.world import World
 from src.entities.enemy import EnemyManager
 from src.entities.player import Player
 from src.system.camera import Camera
@@ -24,29 +25,50 @@ class GameScene:
 		self.viewport_width = world_width
 		self.viewport_height = world_height
 
-		self.world_width = world_width
-		self.world_height = world_height
+		self.world = World(
+			images_dir=assets_dir,
+			viewport_width=self.viewport_width,
+			viewport_height=self.viewport_height,
+		)
+		self.world_width = self.world.width
+		self.world_height = self.world.height
+
+		self.background_color = self.world.background_color
+		grass_path = assets_dir / "grass.png"
+
+		if grass_path.exists():
+			self.ground_tile = pygame.image.load(str(grass_path)).convert()
+		else:
+			self.ground_tile = pygame.Surface((64, 64)).convert()
+			self.ground_tile.fill(self.background_color)
+
+		self.ground_tile_width = max(1, self.ground_tile.get_width())
+		self.ground_tile_height = max(1, self.ground_tile.get_height())
 		self.camera = Camera(viewport_width=self.viewport_width, viewport_height=self.viewport_height)
 		
+		spawn_x = float(self.world.bounds.centerx)
+		spawn_y = float(self.world.bounds.centery)
+
 		self.player = Player(
 			assets_dir=assets_dir,
-			spawn_x=world_width * 0.5,
-			spawn_y=world_height * 0.5,
+			spawn_x=spawn_x,
+			spawn_y=spawn_y,
 		)
 		
 		self.player.init_progression()
         
 		self.enemy_manager = EnemyManager(
 			assets_dir=assets_dir,
-			world_width=world_width,
-			world_height=world_height,
+			world_width=self.world_width,
+			world_height=self.world_height,
 		)
+		self.enemy_manager.set_world_bounds(self.world.bounds)
+		self.world.rebuild(player_center=self.player.center, player_radius=self.player.radius)
+		self.enemy_manager.set_static_colliders(self.world.static_colliders)
 
 		self.total_kills = 0
 
-		self.background_tile = self._load_background_tile(assets_dir)
-
-		self.cursor = GameImage(str(assets_dir / "cursor_lg.png"))
+		self.cursor = GameImage(str(assets_dir / "cursor.png"))
 		self.cursor_hotspot_x = self.cursor.width * 0.5
 		self.cursor_hotspot_y = self.cursor.height * 0.5
 
@@ -54,14 +76,20 @@ class GameScene:
 		self.level_up_active = False
 		self.level_up_options: list[str] = []
 		self.level_up_hover: int | None = None
+
 		self.ui_font_medium = self.services.fonts.get(26)
 		self.ui_font_title = self.services.fonts.get(38)
+
 		self.hud = HUD(
 			viewport_width=self.viewport_width,
 			viewport_height=self.viewport_height,
 			fonts=self.services.fonts,
-			padding=32,
+			padding=64,
 		)
+
+		self.player_dead = False
+		self.game_over_title_font = self.services.fonts.get(68)
+		self.game_over_hint_font = self.services.fonts.get(24)
 
 	def handle_events(self, input_manager: Input | None) -> None:
 		_ = input_manager
@@ -70,16 +98,36 @@ class GameScene:
 		if input_manager is None:
 			return
 
+		if self.player_dead:
+			self._update_game_over(input_manager)
+			return
+
 		if self.level_up_active:
 			self._update_level_up(input_manager)
 			return
 
-		self.player.update(input_manager, dt, self.world_width, self.world_height)
+		self.player.update(
+			input_manager,
+			dt,
+			self.world_width,
+			self.world_height,
+			world_bounds=self.world.bounds,
+		)
+		self._resolve_player_static_collisions()
 		before_update = len(self.enemy_manager.get_enemies())
 		xp_gained = self.enemy_manager.update(self.player, dt)
 		after_update = len(self.enemy_manager.get_enemies())
 
 		self.player.resolve_enemy_collisions(self.enemy_manager.get_enemies())
+
+		if self.player.is_dead():
+			self.player_dead = True
+			self.level_up_active = False
+			self.level_up_options = []
+			self.level_up_hover = None
+			self.pending_level_ups = 0
+
+			return
 
 		if xp_gained:
 			levels_gained = self.player.add_xp(xp_gained)
@@ -90,12 +138,14 @@ class GameScene:
 
 		player_center_x, player_center_y = self.player.center
 		self.camera.follow(player_center_x, player_center_y)
+		self._clamp_camera_to_world()
 
 		if after_update < before_update:
 			self.total_kills += before_update - after_update
 
 	def render(self, window: Any) -> None:
-		self._draw_repeating_background()
+		self._draw_tiled_ground()
+		self.world.draw(camera_x=self.camera.x, camera_y=self.camera.y)
 
 		pygame.mouse.set_visible(False)
 		window.get_mouse().hide()
@@ -107,6 +157,9 @@ class GameScene:
 		if self.level_up_active:
 			self._draw_level_up_overlay()
 
+		if self.player_dead:
+			self._draw_game_over_overlay()
+
 		mouse_x, mouse_y = window.get_mouse().get_position()
 
 		self.cursor.set_position(
@@ -115,6 +168,169 @@ class GameScene:
 		)
 
 		self.cursor.draw()
+
+	def _draw_tiled_ground(self) -> None:
+		screen = get_screen()
+
+		start_x = (-int(self.camera.x) % self.ground_tile_width) - self.ground_tile_width
+		start_y = (-int(self.camera.y) % self.ground_tile_height) - self.ground_tile_height
+
+		for y in range(start_y, self.viewport_height + self.ground_tile_height, self.ground_tile_height):
+			for x in range(start_x, self.viewport_width + self.ground_tile_width, self.ground_tile_width):
+				screen.blit(self.ground_tile, (x, y))
+
+	def _update_game_over(self, input_manager: Input) -> None:
+		keyboard = input_manager.keyboard
+
+		if (keyboard.key_pressed("ENTER")):
+			self._restart_run()
+
+	def _restart_run(self) -> None:
+		assets_dir = self.services.images_dir
+
+		self.player = Player(
+			assets_dir=assets_dir,
+			spawn_x=float(self.world.bounds.centerx),
+			spawn_y=float(self.world.bounds.centery),
+		)
+		self.player.init_progression()
+
+		self.enemy_manager = EnemyManager(
+			assets_dir=assets_dir,
+			world_width=self.world_width,
+			world_height=self.world_height,
+		)
+		self.enemy_manager.set_world_bounds(self.world.bounds)
+		self.world.rebuild(player_center=self.player.center, player_radius=self.player.radius)
+		self.enemy_manager.set_static_colliders(self.world.static_colliders)
+
+		self.total_kills = 0
+		self.pending_level_ups = 0
+		self.level_up_active = False
+		self.level_up_options = []
+		self.level_up_hover = None
+		self.player_dead = False
+
+		self.camera.follow(*self.player.center)
+		self._clamp_camera_to_world()
+
+	def _draw_game_over_overlay(self) -> None:
+		screen = get_screen()
+
+		overlay = pygame.Surface((self.viewport_width, self.viewport_height), pygame.SRCALPHA)
+		overlay.fill((0, 0, 0, 170))
+		screen.blit(overlay, (0, 0))
+
+		title_surface = self.game_over_title_font.render("YOU DIED", True, (235, 100, 100))
+		title_x = (self.viewport_width - title_surface.get_width()) // 2
+		title_y = int(self.viewport_height * 0.32)
+		screen.blit(title_surface, (title_x, title_y))
+
+		hint_surface = self.game_over_hint_font.render("Press Enter to restart", True, (230, 230, 230))
+		hint_x = (self.viewport_width - hint_surface.get_width()) // 2
+		hint_y = title_y + title_surface.get_height() + 18
+		screen.blit(hint_surface, (hint_x, hint_y))
+
+	def _clamp_camera_to_world(self) -> None:
+		max_x = max(0.0, float(self.world_width - self.viewport_width))
+		max_y = max(0.0, float(self.world_height - self.viewport_height))
+
+		self.camera.x = max(0.0, min(self.camera.x, max_x))
+		self.camera.y = max(0.0, min(self.camera.y, max_y))
+
+	def _resolve_player_static_collisions(self) -> None:
+		if not self.world.static_colliders:
+			self._clamp_player_to_world()
+			return
+
+		center_x, center_y = self.player.center
+		radius = self.player.radius
+
+		for _ in range(2):
+			resolved = False
+
+			for rect in self.world.static_colliders:
+				push_x, push_y = self._circle_rect_push(center_x, center_y, radius, rect)
+
+				if push_x == 0.0 and push_y == 0.0:
+					continue
+
+				self.player.sprite.x += push_x
+				self.player.sprite.y += push_y
+
+				center_x += push_x
+				center_y += push_y
+
+				resolved = True
+
+			if not resolved:
+				break
+
+		self._clamp_player_to_world()
+
+	def _clamp_player_to_world(self) -> None:
+		min_x = float(self.world.bounds.left)
+		max_x = float(self.world.bounds.right - self.player.sprite.width)
+		min_y = float(self.world.bounds.top)
+		max_y = float(self.world.bounds.bottom - self.player.sprite.height)
+
+		if max_x < min_x:
+			self.player.sprite.x = self.world.bounds.centerx - self.player.sprite.width * 0.5
+		else:
+			self.player.sprite.x = max(min_x, min(self.player.sprite.x, max_x))
+
+		if max_y < min_y:
+			self.player.sprite.y = self.world.bounds.centery - self.player.sprite.height * 0.5
+		else:
+			self.player.sprite.y = max(min_y, min(self.player.sprite.y, max_y))
+
+	def _circle_intersects_rect(self, center_x: float, center_y: float, radius: float, rect: pygame.Rect) -> bool:
+		closest_x = max(rect.left, min(center_x, rect.right))
+		closest_y = max(rect.top, min(center_y, rect.bottom))
+
+		dx = center_x - closest_x
+		dy = center_y - closest_y
+
+		return (dx * dx + dy * dy) < (radius * radius)
+
+	def _circle_rect_push(self, center_x: float, center_y: float, radius: float, rect: pygame.Rect) -> tuple[float, float]:
+		closest_x = max(rect.left, min(center_x, rect.right))
+		closest_y = max(rect.top, min(center_y, rect.bottom))
+
+		dx = center_x - closest_x
+		dy = center_y - closest_y
+
+		dist_sq = dx * dx + dy * dy
+		if dist_sq >= radius * radius:
+			return (0.0, 0.0)
+
+		if dist_sq <= 0.000001:
+			left_clearance = center_x - rect.left
+			right_clearance = rect.right - center_x
+			top_clearance = center_y - rect.top
+			bottom_clearance = rect.bottom - center_y
+
+			min_clearance = min(left_clearance, right_clearance, top_clearance, bottom_clearance)
+			if min_clearance == left_clearance:
+				target_x = rect.left - radius - 0.01
+				return (target_x - center_x, 0.0)
+			if min_clearance == right_clearance:
+				target_x = rect.right + radius + 0.01
+				return (target_x - center_x, 0.0)
+			if min_clearance == top_clearance:
+				target_y = rect.top - radius - 0.01
+				return (0.0, target_y - center_y)
+
+			target_y = rect.bottom + radius + 0.01
+			return (0.0, target_y - center_y)
+
+		dist = max(0.000001, math.sqrt(dist_sq))
+		overlap = radius - dist + 0.01
+
+		nx = dx / dist
+		ny = dy / dist
+
+		return (nx * overlap, ny * overlap)
 
 	def _open_level_up(self) -> None:
 		available = [
@@ -183,6 +399,7 @@ class GameScene:
 
 		overlay = pygame.Surface((self.viewport_width, self.viewport_height), pygame.SRCALPHA)
 		overlay.fill((0, 0, 0, 140))
+
 		screen.blit(overlay, (0, 0))
 
 		panel_rect, option_rects = self._get_level_up_layout()
@@ -192,6 +409,7 @@ class GameScene:
 		title_surface = self.ui_font_title.render("Level Up!", True, (245, 245, 245))
 		title_x = panel_rect.centerx - (title_surface.get_width() // 2)
 		title_y = panel_rect.y + 24
+
 		screen.blit(title_surface, (title_x, title_y))
 
 		label_map = {
@@ -213,58 +431,9 @@ class GameScene:
 
 			attribute = self.level_up_options[index]
 			label = label_map.get(attribute, attribute)
+
 			text_surface = self.ui_font_medium.render(label, True, (240, 240, 240))
 			text_x = rect.x + 18
 			text_y = rect.y + (rect.height - text_surface.get_height()) // 2
+
 			screen.blit(text_surface, (text_x, text_y))
-
-	def _draw_repeating_background(self) -> None:
-		if self.background_tile is None:
-			self._draw_procedural_background()
-			return
-
-		screen = get_screen()
-
-		tile_width = int(self.background_tile.width)
-		tile_height = int(self.background_tile.height)
-
-		if tile_width <= 0 or tile_height <= 0:
-			return
-
-		start_x = -int(self.camera.x % tile_width) - tile_width
-		start_y = -int(self.camera.y % tile_height) - tile_height
-
-		end_x = self.viewport_width + tile_width
-		end_y = self.viewport_height + tile_height
-		tile_surface = self.background_tile.image
-
-		for draw_x in range(start_x, end_x, tile_width):
-			for draw_y in range(start_y, end_y, tile_height):
-				screen.blit(tile_surface, (draw_x, draw_y))
-
-	def _draw_procedural_background(self) -> None:
-		tile_size = 96
-		start_x = -int(self.camera.x % tile_size) - tile_size
-		start_y = -int(self.camera.y % tile_size) - tile_size
-		end_x = self.viewport_width + tile_size
-		end_y = self.viewport_height + tile_size
-
-		screen = get_screen()
-
-		for draw_x in range(start_x, end_x, tile_size):
-			for draw_y in range(start_y, end_y, tile_size):
-				cell_x = int((draw_x + self.camera.x) // tile_size)
-				cell_y = int((draw_y + self.camera.y) // tile_size)
-				is_even = (cell_x + cell_y) % 2 == 0
-				color = (24, 28, 34) if is_even else (19, 22, 27)
-
-				pygame.draw.rect(screen, color, (draw_x, draw_y, tile_size, tile_size))
-
-	def _load_background_tile(self, assets_dir: Path) -> GameImage | None:
-		for filename in ("map_tile.png", "tile_0001.png", "logo.png"):
-			candidate = assets_dir / filename
-
-			if candidate.exists():
-				return GameImage(str(candidate))
-
-		return None

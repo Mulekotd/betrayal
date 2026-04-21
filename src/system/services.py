@@ -14,9 +14,11 @@ class FontLibrary:
 	def get(self, size: int) -> pygame.font.Font:
 		size = max(1, int(size))
 		font = self._cache.get(size)
+		
 		if font is None:
 			font = pygame.font.Font(str(self.font_path), size)
 			self._cache[size] = font
+
 		return font
 
 
