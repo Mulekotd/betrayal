@@ -39,6 +39,7 @@ class Animation:
 
 		action_count = sum(1 for frames in self.frames.values() if frames)
 		total_frames = sum(len(frames) for frames in self.frames.values())
+
 		print(f"[Animation] {self.sprite_path.name}: actions={action_count} frames={total_frames}")
 
 		self.current_action = self.actions[0] if self.actions else ""
@@ -84,11 +85,13 @@ class Animation:
 
 		key = (self.current_action, self.current_index, flip_x, flip_y)
 		cached = self._flip_cache.get(key)
+
 		if cached is not None:
 			return cached
 
 		flipped = pygame.transform.flip(frame, flip_x, flip_y)
 		self._flip_cache[key] = flipped
+
 		return flipped
 
 	def get_duration(self, action: str | None = None) -> int:
@@ -182,11 +185,13 @@ class Animation:
 
 		self.frame_width = max_w
 		self.frame_height = max_h
+
 		if self.frame_width > 0 and self.frame_height > 0:
 			self._normalize_frame_sizes(self.frame_width, self.frame_height)
 
 	def _resolve_row_range(self, alpha, expected_top: int, expected_bottom: int) -> tuple[int, int]:
 		height = alpha.shape[0]
+
 		expected_top = max(0, min(expected_top, max(0, height - 1)))
 		expected_bottom = max(expected_top + 1, min(expected_bottom, height))
 
@@ -226,6 +231,7 @@ class Animation:
 
 		row_slice = alpha[row_start:row_end, :]
 		col_mask = (row_slice > self.alpha_threshold).any(axis=0)
+
 		return self._mask_to_ranges(col_mask, gap_tolerance=self.gap_tolerance)
 
 	def _fixed_col_ranges(self, alpha, row_start: int, row_end: int) -> list[tuple[int, int]]:
@@ -239,6 +245,7 @@ class Animation:
 		ranges: list[tuple[int, int]] = []
 		for x in range(0, max(1, sheet_width - self.frame_width + 1), step_x):
 			x_end = min(sheet_width, x + self.frame_width)
+
 			if x_end <= x:
 				continue
 
@@ -285,13 +292,18 @@ class Animation:
 	def _normalize_frame_sizes(self, width: int, height: int) -> None:
 		for action, frames in self.frames.items():
 			normalized: list[pygame.Surface] = []
+
 			for frame in frames:
 				if frame.get_width() == width and frame.get_height() == height:
 					normalized.append(frame)
 					continue
+
 				canvas = pygame.Surface((width, height), pygame.SRCALPHA)
+
 				offset_x = (width - frame.get_width()) // 2
 				offset_y = height - frame.get_height()
+
 				canvas.blit(frame, (offset_x, offset_y))
 				normalized.append(canvas)
+
 			self.frames[action] = normalized

@@ -51,7 +51,7 @@ class Game:
 		self.window.set_title(self.title)
 		self.window.set_background_color(list(self.background_color))
 
-		assets_dir = Path(__file__).resolve().parent.parent / "assets"
+		assets_dir = Path(__file__).resolve().parent / "assets"
 		images_dir = assets_dir / "images"
 		fonts_dir = assets_dir / "fonts"
 		font_path = fonts_dir / "Monogram.ttf"
@@ -63,7 +63,7 @@ class Game:
 			font_path=font_path,
 		)
 
-		icon_path = Path(__file__).resolve().parent.parent / "assets" / "images" / "icon.ico"
+		icon_path = assets_dir / "images" / "icon.ico"
 
 		if icon_path.exists():
 			try:

@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pygame
 
-from src.system.tileset import TileObject, TileSet
+from src.engine.tileset import TileObject, TileSet
 
 
 @dataclass(frozen=True)

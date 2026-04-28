@@ -7,8 +7,8 @@ from typing import Callable
 
 import pygame
 
+from src.engine.animation import Animation
 from src.entities.weapon import Arrow
-from src.system.animation import Animation
 from src.utils.window import get_screen
 
 
@@ -25,6 +25,7 @@ class Enemy:
 		base_speed: float = 150.0,
 		base_damage: int = 12,
 		xp_value: int = 6,
+		armor: float = 0.0,
 	) -> None:
 		self.animation = Animation(
 			sprite_path=sprite_path,
@@ -44,11 +45,14 @@ class Enemy:
 		self.base_health = base_health
 		self.base_speed = base_speed
 		self.base_damage = base_damage
+		# armor: damage reduction fraction [0.0, 1.0). e.g. 0.2 = 20% damage reduction.
+		self.base_armor = max(0.0, min(armor, 0.9))
 
 		self.xp_value = xp_value
 		self.health = base_health
 		self.speed = base_speed
 		self.damage = base_damage
+		self.armor = self.base_armor
 
 		self.base_radius = max(8.0, min(self.frame_width, self.frame_height) * 0.42)
 		self.radius = self.base_radius
@@ -74,6 +78,7 @@ class Enemy:
 		self.health = self.base_health
 		self.speed = self.base_speed * speed_multiplier
 		self.damage = self.base_damage
+		self.armor = self.base_armor
 		self.slow_factor = 1.0
 		self.slow_timer = 0.0
 		self.burn_dps = 0.0
@@ -148,7 +153,8 @@ class Enemy:
 			self.animation.play(self.walk_action)
 
 	def take_damage(self, amount: int) -> None:
-		self.health -= amount
+		reduced = int(amount * (1.0 - self.armor))
+		self.health -= max(1, reduced)
 
 	def apply_burn(self, dps: float, duration: float) -> None:
 		self.burn_dps = max(self.burn_dps, dps)
@@ -168,6 +174,7 @@ class Enemy:
 	def _update_statuses(self, dt: float) -> None:
 		if self.burn_timer > 0.0:
 			self.burn_timer = max(0.0, self.burn_timer - dt)
+			# Armor does not reduce burn damage (fire bypasses armor).
 			self.health -= self.burn_dps * dt
 			if self.burn_timer <= 0.0:
 				self.burn_dps = 0.0
@@ -196,34 +203,60 @@ class Enemy:
 		screen.blit(frame, (self.x - camera_x, self.y - camera_y))
 
 
+# ---------------------------------------------------------------------------
+# Soldier (melee) — balanced stats
+#   Melee: tankier than archer, slower, lower damage.
+#   Armor:  0.20  (20% damage reduction)
+#   HP:     60
+#   Speed:  120
+#   Damage: 8  (melee hit)
+#   XP:     8
+#
+# Archer (ranged Soldier) — glass-cannon stats
+#   Armor:  0.05  (5% damage reduction — almost none)
+#   HP:     35
+#   Speed:  145
+#   Damage: 22  (arrow hit — high)
+#   XP:     10
+# ---------------------------------------------------------------------------
 class Soldier(Enemy):
 	def __init__(
 		self,
 		sprite_path: str | Path,
 		is_ranged: bool,
-		base_health: int = 40,
-		base_speed: float = 135.0,
-		base_damage: int = 10,
+		# Melee defaults
+		base_health: int = 60,
+		base_speed: float = 120.0,
+		base_damage: int = 8,
 		xp_value: int = 8,
 	) -> None:
+		# Override stats for ranged (archer) variant
+		if is_ranged:
+			base_health = 35
+			base_speed = 145.0
+			base_damage = 22
+			xp_value = 10
+
+		armor = 0.05 if is_ranged else 0.20
+
 		super().__init__(
 			sprite_path=sprite_path,
 			frame_width=0,
 			frame_height=0,
 			frame_gap=0,
-			actions=["IDLE", "WALK", "ATTACK_1", "ATTACK_2", "ATTACK_3", "HURT", "DEATH"],
+			actions=["IDLE", "WALK", "ATTACK_1", "ATTACK_2", "ATTACK_3", "DEATH"],
 			frame_rate=120,
 			base_health=base_health,
 			base_speed=base_speed,
 			base_damage=base_damage,
 			xp_value=xp_value,
+			armor=armor,
 		)
 		self.is_ranged = is_ranged
 		self.base_scale = 1.5
 		self.set_scale(1.0)
 		self.attack_timer = 0.0
 		self.attack_cooldown = 2.0 if is_ranged else 0.8
-		# Ranged distance is treated as edge-to-edge spacing from the player.
 		self.ranged_distance = 96.0
 		self.ranged_hold_distance = 112.0
 		self.melee_distance = 28.0
@@ -288,7 +321,6 @@ class Soldier(Enemy):
 		effective_melee_distance = max(self.melee_distance, self.radius + player_radius + 6.0)
 
 		if self.is_ranged:
-			# Convert configured ranged spacing into center-to-center thresholds.
 			effective_ranged_distance = self.radius + player_radius + self.ranged_distance
 			effective_hold_distance = self.radius + player_radius + self.ranged_hold_distance
 
@@ -383,6 +415,132 @@ class Soldier(Enemy):
 		self.animation.play(action)
 
 
+# ---------------------------------------------------------------------------
+# Knight — heavy melee bruiser
+#   Armor:  0.35  (35% damage reduction — tankiest of the three)
+#   HP:     100
+#   Speed:  80  (slowest — lumbers toward the player)
+#   Damage: 15  (between Soldier's 8 and Archer's 22)
+#   XP:     15
+#   Two attack animations: ATTACK_1, ATTACK_2
+#   Cooldown: 1.2 s  (slower swing than the Soldier)
+# ---------------------------------------------------------------------------
+class Knight(Enemy):
+	def __init__(
+		self,
+		sprite_path: str | Path,
+		base_health: int = 100,
+		base_speed: float = 80.0,
+		base_damage: int = 15,
+		xp_value: int = 15,
+	) -> None:
+		super().__init__(
+			sprite_path=sprite_path,
+			frame_width=0,
+			frame_height=0,
+			frame_gap=0,
+			actions=["IDLE", "WALK", "ATTACK_1", "ATTACK_2", "DEATH"],
+			frame_rate=120,
+			base_health=base_health,
+			base_speed=base_speed,
+			base_damage=base_damage,
+			xp_value=xp_value,
+			armor=0.35,
+		)
+		self.base_scale = 1.5
+		self.set_scale(1.0)
+		self.attack_timer = 0.0
+		self.attack_cooldown = 1.2
+		self.melee_distance = 32.0
+		self.contact_damage = False
+		self.current_attack_action = ""
+		self.attack_anim_time_left = 0.0
+		self.melee_attack_actions = ["ATTACK_1", "ATTACK_2"]
+		self.next_melee_attack_index = 0
+
+	def spawn(self, x: float, y: float, speed_multiplier: float = 1.0) -> None:
+		super().spawn(x, y, speed_multiplier=speed_multiplier)
+		self.attack_timer = 0.0
+		self.current_attack_action = ""
+		self.attack_anim_time_left = 0.0
+
+	def update_towards(
+		self,
+		target_x: float,
+		target_y: float,
+		dt: float,
+		player: object | None = None,
+		spawn_projectile: Callable[[float, float, float, float, int], None] | None = None,
+		move_target_x: float | None = None,
+		move_target_y: float | None = None,
+	) -> None:
+		self._update_statuses(dt)
+		self.animation.update(int(dt * 1000))
+		self.attack_timer = max(0.0, self.attack_timer - dt)
+		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
+
+		if self.freeze_timer > 0.0:
+			return
+
+		cx, cy = self.center
+		dx = target_x - cx
+		dy = target_y - cy
+		self.facing_dir = -1 if dx < 0 else 1
+		dist_sq = dx * dx + dy * dy
+
+		if dist_sq <= 0.000001:
+			self.animation.play(self.idle_action)
+			return
+
+		if self.attack_anim_time_left > 0.0 and self.current_attack_action:
+			self.animation.play(self.current_attack_action)
+			return
+
+		dist = math.sqrt(dist_sq)
+		player_radius = float(getattr(player, "radius", 12.0))
+		effective_melee_distance = max(self.melee_distance, self.radius + player_radius + 6.0)
+
+		if dist <= effective_melee_distance:
+			if self.attack_timer <= 0.0:
+				self.attack_timer = self.attack_cooldown
+				attack_action = self.melee_attack_actions[self.next_melee_attack_index]
+				self.next_melee_attack_index = (self.next_melee_attack_index + 1) % len(self.melee_attack_actions)
+				self._play_attack(attack_action)
+				damage_fn = getattr(player, "take_damage", None)
+				if callable(damage_fn):
+					damage_fn(self.damage)
+			else:
+				self.animation.play(self.idle_action)
+			return
+
+		move_x = target_x if move_target_x is None else move_target_x
+		move_y = target_y if move_target_y is None else move_target_y
+		move_dx = move_x - cx
+		move_dy = move_y - cy
+		move_dist_sq = move_dx * move_dx + move_dy * move_dy
+
+		if move_dist_sq <= 0.000001:
+			self.animation.play(self.idle_action)
+			return
+
+		inv_dist = 1.0 / math.sqrt(move_dist_sq)
+		speed = self.speed * self.slow_factor
+		self.x += move_dx * inv_dist * speed * dt
+		self.y += move_dy * inv_dist * speed * dt
+		self.animation.play(self.walk_action)
+
+	def _play_attack(self, action: str) -> None:
+		if action not in self.animation.frames or not self.animation.frames[action]:
+			self.current_attack_action = ""
+			self.attack_anim_time_left = 0.0
+			return
+
+		action_duration = max(0.12, self.animation.get_duration(action) / 1000.0)
+		self.current_attack_action = action
+		self.attack_anim_time_left = min(action_duration, self.attack_cooldown)
+		self.animation.play(action)
+
+
 class EnemyCluster:
 	"""Spatial hash grid to reduce neighbor checks for enemy separation."""
 
@@ -428,6 +586,7 @@ class EnemyManager:
 		self.world_height = world_height
 		self.world_bounds = pygame.Rect(0, 0, max(1, world_width), max(1, world_height))
 		self.soldier_sprite_path = self.assets_dir / "soldier_spritesheet.png"
+		self.knight_sprite_path = self.assets_dir / "knight_spritesheet.png"
 		self.arrow_sprite_path = self.assets_dir / "arrow.png"
 		self.arrow_scale = 1.75
 
@@ -457,8 +616,9 @@ class EnemyManager:
 		self.max_spawn_rate = max_spawn_rate
 		self.sprite_scale = 2.0
 		self.spawn_weights = [
-			(lambda: Soldier(self.soldier_sprite_path, is_ranged=False), 0.7),
+			(lambda: Soldier(self.soldier_sprite_path, is_ranged=False), 0.5),
 			(lambda: Soldier(self.soldier_sprite_path, is_ranged=True), 0.3),
+			(lambda: Knight(self.knight_sprite_path), 0.2),
 		]
 
 	def update(self, player: object, dt: float) -> int:

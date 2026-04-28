@@ -1,4 +1,4 @@
-from src.engine.game import Game
+from src.game import Game
 from src.scenes.menu_scene import MenuScene
 
 
