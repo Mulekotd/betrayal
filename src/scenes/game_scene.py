@@ -4,7 +4,6 @@ import math
 import random
 from typing import Any
 
-import pygame
 from external.pplay.gameimage import GameImage
 
 from src.engine.camera import Camera
@@ -15,6 +14,8 @@ from src.system.input import Input
 from src.system.hud import HUD
 from src.utils.services import GameServices
 from src.utils.window import get_screen
+from src.utils.window import load_image, create_surface, draw_rect, blit_surface, set_mouse_visible, scale_surface
+from src.utils.rect import Rect
 
 
 class GameScene:
@@ -37,9 +38,9 @@ class GameScene:
 		grass_path = assets_dir / "grass.png"
 
 		if grass_path.exists():
-			self.ground_tile = pygame.image.load(str(grass_path)).convert()
+			self.ground_tile = load_image(str(grass_path), alpha=False)
 		else:
-			self.ground_tile = pygame.Surface((64, 64)).convert()
+			self.ground_tile = create_surface(64, 64)
 			self.ground_tile.fill(self.background_color)
 
 		self.ground_tile_width = max(1, self.ground_tile.get_width())
@@ -147,7 +148,7 @@ class GameScene:
 		self._draw_tiled_ground()
 		self.world.draw(camera_x=self.camera.x, camera_y=self.camera.y)
 
-		pygame.mouse.set_visible(False)
+		set_mouse_visible(False)
 		window.get_mouse().hide()
 
 		self.enemy_manager.draw(camera_x=self.camera.x, camera_y=self.camera.y)
@@ -217,9 +218,9 @@ class GameScene:
 	def _draw_game_over_overlay(self) -> None:
 		screen = get_screen()
 
-		overlay = pygame.Surface((self.viewport_width, self.viewport_height), pygame.SRCALPHA)
+		overlay = create_surface(self.viewport_width, self.viewport_height, alpha=True)
 		overlay.fill((0, 0, 0, 170))
-		screen.blit(overlay, (0, 0))
+		blit_surface(overlay, (0, 0), target=screen)
 
 		title_surface = self.game_over_title_font.render("YOU DIED", True, (235, 100, 100))
 		title_x = (self.viewport_width - title_surface.get_width()) // 2
@@ -284,7 +285,7 @@ class GameScene:
 		else:
 			self.player.sprite.y = max(min_y, min(self.player.sprite.y, max_y))
 
-	def _circle_intersects_rect(self, center_x: float, center_y: float, radius: float, rect: pygame.Rect) -> bool:
+	def _circle_intersects_rect(self, center_x: float, center_y: float, radius: float, rect: Rect) -> bool:
 		closest_x = max(rect.left, min(center_x, rect.right))
 		closest_y = max(rect.top, min(center_y, rect.bottom))
 
@@ -293,7 +294,7 @@ class GameScene:
 
 		return (dx * dx + dy * dy) < (radius * radius)
 
-	def _circle_rect_push(self, center_x: float, center_y: float, radius: float, rect: pygame.Rect) -> tuple[float, float]:
+	def _circle_rect_push(self, center_x: float, center_y: float, radius: float, rect: Rect) -> tuple[float, float]:
 		closest_x = max(rect.left, min(center_x, rect.right))
 		closest_y = max(rect.top, min(center_y, rect.bottom))
 
@@ -351,12 +352,12 @@ class GameScene:
 		self.level_up_hover = None
 		self.level_up_active = True
 
-	def _get_level_up_layout(self) -> tuple[pygame.Rect, list[pygame.Rect]]:
+	def _get_level_up_layout(self) -> tuple[Rect, list[Rect]]:
 		panel_width = int(self.viewport_width * 0.52)
 		panel_height = int(self.viewport_height * 0.55)
 		panel_x = (self.viewport_width - panel_width) // 2
 		panel_y = (self.viewport_height - panel_height) // 2
-		panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+		panel_rect = Rect(panel_x, panel_y, panel_width, panel_height)
 
 		option_height = 78
 		option_gap = 14
@@ -364,10 +365,10 @@ class GameScene:
 		option_width = panel_width - 56
 		option_start_y = panel_y + 86
 
-		rects = []
+		rects: list[Rect] = []
 		for index in range(len(self.level_up_options)):
 			y = option_start_y + index * (option_height + option_gap)
-			rects.append(pygame.Rect(option_x, y, option_width, option_height))
+			rects.append(Rect(option_x, y, option_width, option_height))
 
 		return panel_rect, rects
 
@@ -378,7 +379,7 @@ class GameScene:
 		self.level_up_hover = None
 
 		for index, rect in enumerate(option_rects):
-			if rect.collidepoint(mx, my):
+			if rect.left <= mx <= rect.right and rect.top <= my <= rect.bottom:
 				self.level_up_hover = index
 
 				if mouse.button_down(mouse.LEFT):
@@ -397,14 +398,14 @@ class GameScene:
 	def _draw_level_up_overlay(self) -> None:
 		screen = get_screen()
 
-		overlay = pygame.Surface((self.viewport_width, self.viewport_height), pygame.SRCALPHA)
+		overlay = create_surface(self.viewport_width, self.viewport_height, alpha=True)
 		overlay.fill((0, 0, 0, 140))
 
-		screen.blit(overlay, (0, 0))
+		blit_surface(overlay, (0, 0), target=screen)
 
 		panel_rect, option_rects = self._get_level_up_layout()
-		pygame.draw.rect(screen, (78, 82, 120), panel_rect, border_radius=10)
-		pygame.draw.rect(screen, (200, 170, 90), panel_rect, 2, border_radius=10)
+		draw_rect((78, 82, 120), panel_rect, border_radius=10, target=screen)
+		draw_rect((200, 170, 90), panel_rect, width=2, border_radius=10, target=screen)
 
 		title_surface = self.ui_font_title.render("Level Up!", True, (245, 245, 245))
 		title_x = panel_rect.centerx - (title_surface.get_width() // 2)
@@ -426,8 +427,8 @@ class GameScene:
 			fill = (120, 120, 140) if is_hover else (96, 96, 112)
 			border = (220, 190, 110) if is_hover else (180, 150, 90)
 
-			pygame.draw.rect(screen, fill, rect, border_radius=8)
-			pygame.draw.rect(screen, border, rect, 2, border_radius=8)
+			draw_rect(fill, rect, border_radius=8, target=screen)
+			draw_rect(border, rect, width=2, border_radius=8, target=screen)
 
 			attribute = self.level_up_options[index]
 			label = label_map.get(attribute, attribute)

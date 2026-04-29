@@ -5,11 +5,9 @@ import random
 from pathlib import Path
 from typing import Callable
 
-import pygame
-
 from src.engine.animation import Animation
 from src.entities.weapon import Arrow
-from src.utils.window import get_screen
+from src.utils.window import get_screen, scale_surface, blit_surface
 
 
 class Enemy:
@@ -198,9 +196,9 @@ class Enemy:
 		if frame is None:
 			return
 		if self.sprite_scale != 1.0:
-			frame = pygame.transform.scale(frame, (int(self.width), int(self.height)))
+			frame = scale_surface(frame, int(self.width), int(self.height))
 
-		screen.blit(frame, (self.x - camera_x, self.y - camera_y))
+		blit_surface(frame, (self.x - camera_x, self.y - camera_y), target=screen)
 
 
 # ---------------------------------------------------------------------------
@@ -584,24 +582,29 @@ class EnemyManager:
 		self.assets_dir = Path(assets_dir)
 		self.world_width = world_width
 		self.world_height = world_height
-		self.world_bounds = pygame.Rect(0, 0, max(1, world_width), max(1, world_height))
+		from src.utils.rect import Rect
+		self.world_bounds = Rect(0, 0, max(1, world_width), max(1, world_height))
 		self.soldier_sprite_path = self.assets_dir / "soldier_spritesheet.png"
 		self.knight_sprite_path = self.assets_dir / "knight_spritesheet.png"
 		self.arrow_sprite_path = self.assets_dir / "arrow.png"
 		self.arrow_scale = 1.75
 
-		loaded_arrow = pygame.image.load(str(self.arrow_sprite_path)).convert_alpha()
-		
+		from src.utils.window import load_image, scale_surface
+
+		loaded_arrow = load_image(str(self.arrow_sprite_path), alpha=True)
+        
 		if self.arrow_scale != 1.0:
 			scaled_w = max(1, int(loaded_arrow.get_width() * self.arrow_scale))
 			scaled_h = max(1, int(loaded_arrow.get_height() * self.arrow_scale))
-			self.arrow_sprite = pygame.transform.scale(loaded_arrow, (scaled_w, scaled_h)).convert_alpha()
+			self.arrow_sprite = scale_surface(loaded_arrow, scaled_w, scaled_h).convert_alpha()
 		else:
 			self.arrow_sprite = loaded_arrow
 
 		self.arrow_radius = max(4.0, min(self.arrow_sprite.get_width(), self.arrow_sprite.get_height()) * 0.35)
-		self._arrow_rotation_cache: dict[int, pygame.Surface] = {}
-		self._static_colliders: list[pygame.Rect] = []
+		from typing import Any
+
+		self._arrow_rotation_cache: dict[int, Any] = {}
+		self._static_colliders: list[object] = []
 
 		self.active: list[Enemy] = []
 		self.pool: list[Enemy] = []
@@ -650,12 +653,13 @@ class EnemyManager:
 	def draw(self, camera_x: float = 0.0, camera_y: float = 0.0) -> None:
 		for arrow in self.arrows:
 			arrow_surface = self._get_rotated_arrow_surface(arrow.angle_deg)
-			get_screen().blit(
+			blit_surface(
 				arrow_surface,
 				(
 					arrow.x - camera_x - arrow_surface.get_width() * 0.5,
 					arrow.y - camera_y - arrow_surface.get_height() * 0.5,
 				),
+				target=get_screen(),
 			)
 
 		for enemy in self.active:
@@ -664,13 +668,14 @@ class EnemyManager:
 	def get_enemies(self) -> list[Enemy]:
 		return self.active
 
-	def set_static_colliders(self, colliders: list[pygame.Rect]) -> None:
-		self._static_colliders = [rect.copy() for rect in colliders]
+	def set_static_colliders(self, colliders: list[object]) -> None:
+		# Accept Rect-like objects (from World) and copy their values
+		self._static_colliders = [getattr(rect, 'copy')() if callable(getattr(rect, 'copy', None)) else rect for rect in colliders]
 
-	def set_world_bounds(self, bounds: pygame.Rect) -> None:
-		self.world_bounds = bounds.copy()
-		self.world_width = max(1, int(bounds.right))
-		self.world_height = max(1, int(bounds.bottom))
+	def set_world_bounds(self, bounds: object) -> None:
+		self.world_bounds = getattr(bounds, 'copy')() if callable(getattr(bounds, 'copy', None)) else bounds
+		self.world_width = max(1, int(getattr(bounds, 'right', self.world_width)))
+		self.world_height = max(1, int(getattr(bounds, 'bottom', self.world_height)))
 
 	def set_scale(self, scale: float) -> None:
 		self.sprite_scale = max(0.1, scale)
@@ -862,7 +867,7 @@ class EnemyManager:
 			if not resolved:
 				break
 
-	def _circle_rect_push(self, center_x: float, center_y: float, radius: float, rect: pygame.Rect) -> tuple[float, float]:
+	def _circle_rect_push(self, center_x: float, center_y: float, radius: float, rect: object) -> tuple[float, float]:
 		closest_x = max(rect.left, min(center_x, rect.right))
 		closest_y = max(rect.top, min(center_y, rect.bottom))
 		dx = center_x - closest_x
@@ -906,7 +911,7 @@ class EnemyManager:
 
 		return False
 
-	def _circle_intersects_rect(self, center_x: float, center_y: float, radius: float, rect: pygame.Rect) -> bool:
+	def _circle_intersects_rect(self, center_x: float, center_y: float, radius: float, rect: object) -> bool:
 		closest_x = max(rect.left, min(center_x, rect.right))
 		closest_y = max(rect.top, min(center_y, rect.bottom))
 		dx = center_x - closest_x
@@ -929,14 +934,16 @@ class EnemyManager:
 		)
 		self.arrows.append(arrow)
 
-	def _get_rotated_arrow_surface(self, angle_deg: float) -> pygame.Surface:
+	def _get_rotated_arrow_surface(self, angle_deg: float):
+		from src.utils.window import rotate_surface
+
 		cache_key = int(round(angle_deg)) % 360
 		cached = self._arrow_rotation_cache.get(cache_key)
 
 		if cached is not None:
 			return cached
 
-		rotated = pygame.transform.rotate(self.arrow_sprite, cache_key).convert_alpha()
+		rotated = rotate_surface(self.arrow_sprite, cache_key).convert_alpha()
 		self._arrow_rotation_cache[cache_key] = rotated
 
 		return rotated
@@ -958,7 +965,7 @@ class EnemyManager:
 			if arrow.life_left <= 0.0:
 				continue
 
-			if not self.world_bounds.collidepoint(arrow.x, arrow.y):
+			if not (self.world_bounds.left <= arrow.x <= self.world_bounds.right and self.world_bounds.top <= arrow.y <= self.world_bounds.bottom):
 				continue
 
 			if self._intersects_static_colliders(arrow.x, arrow.y, arrow.radius):

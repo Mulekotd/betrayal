@@ -2,21 +2,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
-import pygame
+from src.utils.window import get_window
 
 
 @dataclass
 class FontLibrary:
 	font_path: Path
-	_cache: dict[int, pygame.font.Font] = field(default_factory=dict)
+	_cache: dict[int, Any] = field(default_factory=dict)
 
-	def get(self, size: int) -> pygame.font.Font:
+	def get(self, size: int) -> Any:
 		size = max(1, int(size))
 		font = self._cache.get(size)
 		
 		if font is None:
-			font = pygame.font.Font(str(self.font_path), size)
+			font = get_window().load_font(self.font_path, size)
 			self._cache[size] = font
 
 		return font

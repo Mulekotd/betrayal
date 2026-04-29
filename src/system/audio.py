@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pygame
-
 from external.pplay.sound import Music, Sound, SoundManager
 
 
@@ -15,13 +13,10 @@ class Audio:
 		self.set_volume(volume)
 
 	def _ensure_audio_backend(self) -> bool:
-		if pygame.mixer.get_init():
-			return True
-
 		try:
 			SoundManager.inicializar()
 			return True
-		except pygame.error:
+		except Exception:
 			return False
 
 	def set_volume(self, value: int) -> None:
@@ -139,7 +134,15 @@ class Audio:
 			return False
 
 		if key is None:
-			return bool(pygame.mixer.get_busy())
+			if any(music.is_playing() for music in self._music.values()):
+				return True
+
+			for sound in self._sounds.values():
+				raw_sound = getattr(sound, "sound", None)
+				if raw_sound is not None and raw_sound.get_num_channels() > 0:
+					return True
+
+			return False
 
 		music = self._music.get(key)
 

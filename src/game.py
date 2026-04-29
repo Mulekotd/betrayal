@@ -3,8 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Protocol
 
-import pygame
-
 from external.pplay.window import Window
 
 from src.system.audio import Audio
@@ -69,11 +67,7 @@ class Game:
 		theme_path = assets_dir / "sounds" / "theme.ogg"
 
 		if icon_path.exists():
-			try:
-				icon_surface = pygame.image.load(str(icon_path))
-				pygame.display.set_icon(icon_surface)
-			except pygame.error:
-				pass
+			self.window.set_icon(icon_path)
 
 		if theme_path.exists():
 			theme_key = "theme"
@@ -92,8 +86,7 @@ class Game:
 		self.input.keyboard = window_cls.get_keyboard()
 		self.input.mouse = window_cls.get_mouse()
 
-		pygame.mouse.set_visible(False)
-		self.input.mouse.hide()
+		self.window.mouse.hide()
 
 	def set_scene(self, scene: SceneContract) -> None:
 		self.current_scene = scene

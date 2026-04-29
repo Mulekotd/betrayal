@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-import pygame
+from src.utils.rect import Rect
 
 from src.engine.tileset import TileObject, TileSet
 
@@ -44,7 +44,7 @@ class World:
 		self.height = total_height
 		self.background_color = self.config.background_color
 
-		self.bounds = pygame.Rect(
+		self.bounds = Rect(
 			self.config.margin,
 			self.config.margin,
 			max(1, self.width - self.config.margin * 2),
@@ -53,7 +53,7 @@ class World:
 
 		self.tree_tileset: TileSet | None = None
 		self.objects: list[TileObject] = []
-		self.static_colliders: list[pygame.Rect] = []
+		self.static_colliders: list[Rect] = []
 		self._rng = np.random.default_rng()
 
 	def rebuild(self, player_center: tuple[float, float], player_radius: float) -> None:
@@ -137,7 +137,7 @@ class World:
 		candidate_points = np.vstack((candidate_points, extra_points))
 		self._rng.shuffle(candidate_points)
 
-		occupied_bins: dict[tuple[int, int], list[pygame.Rect]] = {}
+		occupied_bins: dict[tuple[int, int], list[Rect]] = {}
 
 		for point_x, point_y in candidate_points:
 			if len(objects) >= target_count:
@@ -166,8 +166,8 @@ class World:
 
 	def _is_tree_position_free(
 		self,
-		candidate: pygame.Rect,
-		occupied_bins: dict[tuple[int, int], list[pygame.Rect]],
+		candidate: object,
+		occupied_bins: dict[tuple[int, int], list[object]],
 		bin_size: int,
 		min_gap: int,
 	) -> bool:
@@ -187,8 +187,8 @@ class World:
 
 	def _register_tree_rect(
 		self,
-		rect: pygame.Rect,
-		occupied_bins: dict[tuple[int, int], list[pygame.Rect]],
+		rect: object,
+		occupied_bins: dict[tuple[int, int], list[object]],
 		bin_size: int,
 	) -> None:
 		left = int(math.floor(rect.left / bin_size))
@@ -200,7 +200,7 @@ class World:
 			for by in range(top, bottom + 1):
 				occupied_bins.setdefault((bx, by), []).append(rect)
 
-	def _circle_intersects_rect(self, center_x: float, center_y: float, radius: float, rect: pygame.Rect) -> bool:
+	def _circle_intersects_rect(self, center_x: float, center_y: float, radius: float, rect: object) -> bool:
 		closest_x = max(rect.left, min(center_x, rect.right))
 		closest_y = max(rect.top, min(center_y, rect.bottom))
 

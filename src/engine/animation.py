@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 
-import pygame
+from typing import Any
+
+from src.utils.window import create_surface, flip_surface, load_image, scale_surface
 
 
 class Animation:
@@ -25,9 +27,9 @@ class Animation:
 		self.alpha_threshold = 1
 		self.gap_tolerance = max(1, min(4, self.gap if self.gap > 0 else 1))
 
-		self.sheet = pygame.image.load(str(self.sprite_path)).convert_alpha()
-		self.frames: dict[str, list[pygame.Surface]] = {}
-		self._flip_cache: dict[tuple[str, int, bool, bool], pygame.Surface] = {}
+		self.sheet = load_image(str(self.sprite_path), alpha=True)
+		self.frames: dict[str, list[Any]] = {}
+		self._flip_cache: dict[tuple[str, int, bool, bool], Any] = {}
 
 		if self.frame_width > 0 and self.frame_height > 0:
 			self._slice_hybrid()
@@ -66,7 +68,7 @@ class Animation:
 			self.elapsed_ms -= self.frame_rate
 			self.current_index = (self.current_index + 1) % len(frames)
 
-	def get_frame(self) -> pygame.Surface | None:
+	def get_frame(self) -> Any | None:
 		frames = self.frames.get(self.current_action, [])
 
 		if not frames:
@@ -74,7 +76,7 @@ class Animation:
 
 		return frames[self.current_index]
 
-	def get_frame_flipped(self, flip_x: bool = False, flip_y: bool = False) -> pygame.Surface | None:
+	def get_frame_flipped(self, flip_x: bool = False, flip_y: bool = False) -> Any | None:
 		frame = self.get_frame()
 
 		if frame is None:
@@ -89,7 +91,7 @@ class Animation:
 		if cached is not None:
 			return cached
 
-		flipped = pygame.transform.flip(frame, flip_x, flip_y)
+		flipped = flip_surface(frame, flip_x=flip_x, flip_y=flip_y)
 		self._flip_cache[key] = flipped
 
 		return flipped
@@ -102,8 +104,7 @@ class Animation:
 
 	def _slice_hybrid(self) -> None:
 		# Hybrid parser: uses fixed rows (grid guidance) and auto-detected columns.
-		alpha = pygame.surfarray.array_alpha(self.sheet).T
-		sheet_height, _sheet_width = alpha.shape
+		sheet_height = self.sheet.get_height()
 		step_y = max(1, self.frame_height + self.gap)
 
 		max_w = self.frame_width
@@ -117,27 +118,30 @@ class Animation:
 				self.frames[action] = []
 				continue
 
-			row_start, row_end = self._resolve_row_range(alpha, expected_top, expected_bottom)
-			col_ranges = self._detect_col_ranges(alpha, row_start, row_end)
+			row_start, row_end = self._resolve_row_range(expected_top, expected_bottom)
+			col_ranges = self._detect_col_ranges(row_start, row_end)
 
 			if not col_ranges:
-				col_ranges = self._fixed_col_ranges(alpha, row_start, row_end)
+				col_ranges = self._fixed_col_ranges(row_start, row_end)
 
-			frames: list[pygame.Surface] = []
+			frames: list[Any] = []
 			for col_start, col_end in col_ranges:
 				if col_end <= col_start:
 					continue
 
-				area = alpha[row_start:row_end, col_start:col_end]
-				if area.size == 0 or not (area > self.alpha_threshold).any():
+				frame_width = col_end - col_start
+				frame_height = row_end - row_start
+				if frame_width <= 0 or frame_height <= 0:
 					continue
 
-				rect = pygame.Rect(col_start, row_start, col_end - col_start, row_end - row_start)
-				frame = self.sheet.subsurface(rect).copy()
+				if not self._surface_has_pixels(col_start, row_start, frame_width, frame_height):
+					continue
+
+				frame = self.sheet.subsurface((col_start, row_start, frame_width, frame_height)).copy()
 				frames.append(frame)
 
-				max_w = max(max_w, rect.width)
-				max_h = max(max_h, rect.height)
+				max_w = max(max_w, frame.get_width())
+				max_h = max(max_h, frame.get_height())
 
 			self.frames[action] = frames
 
@@ -148,12 +152,7 @@ class Animation:
 			self._normalize_frame_sizes(self.frame_width, self.frame_height)
 
 	def _slice_auto(self) -> None:
-		# pygame.surfarray returns (width, height); transpose to (height, width).
-		alpha = pygame.surfarray.array_alpha(self.sheet).T
-		height, width = alpha.shape
-
-		row_mask = (alpha > self.alpha_threshold).any(axis=1)
-		row_ranges = self._mask_to_ranges(row_mask, gap_tolerance=self.gap_tolerance)
+		row_ranges = self._mask_to_ranges(self._row_mask(0, self.sheet.get_height()), gap_tolerance=self.gap_tolerance)
 
 		if not row_ranges:
 			return
@@ -165,20 +164,24 @@ class Animation:
 			if row_index >= len(self.actions):
 				break
 
-			col_ranges = self._detect_col_ranges(alpha, row_start, row_end)
+			col_ranges = self._detect_col_ranges(row_start, row_end)
 
-			frames: list[pygame.Surface] = []
+			frames: list[Any] = []
 			for col_start, col_end in col_ranges:
-				rect = pygame.Rect(col_start, row_start, col_end - col_start, row_end - row_start)
+				frame_width = col_end - col_start
+				frame_height = row_end - row_start
 
-				if rect.width <= 0 or rect.height <= 0:
+				if frame_width <= 0 or frame_height <= 0:
 					continue
 
-				frame = self.sheet.subsurface(rect).copy()
+				if not self._surface_has_pixels(col_start, row_start, frame_width, frame_height):
+					continue
+
+				frame = self.sheet.subsurface((col_start, row_start, frame_width, frame_height)).copy()
 				frames.append(frame)
 
-				max_w = max(max_w, rect.width)
-				max_h = max(max_h, rect.height)
+				max_w = max(max_w, frame.get_width())
+				max_h = max(max_h, frame.get_height())
 
 			action = self.actions[row_index]
 			self.frames[action] = frames
@@ -189,8 +192,8 @@ class Animation:
 		if self.frame_width > 0 and self.frame_height > 0:
 			self._normalize_frame_sizes(self.frame_width, self.frame_height)
 
-	def _resolve_row_range(self, alpha, expected_top: int, expected_bottom: int) -> tuple[int, int]:
-		height = alpha.shape[0]
+	def _resolve_row_range(self, expected_top: int, expected_bottom: int) -> tuple[int, int]:
+		height = self.sheet.get_height()
 
 		expected_top = max(0, min(expected_top, max(0, height - 1)))
 		expected_bottom = max(expected_top + 1, min(expected_bottom, height))
@@ -199,9 +202,7 @@ class Animation:
 		probe_top = max(0, expected_top - probe_pad)
 		probe_bottom = min(height, expected_bottom + probe_pad)
 
-		probe = alpha[probe_top:probe_bottom, :]
-		row_mask = (probe > self.alpha_threshold).any(axis=1)
-		ranges = self._mask_to_ranges(row_mask, gap_tolerance=self.gap_tolerance)
+		ranges = self._mask_to_ranges(self._row_mask(probe_top, probe_bottom), gap_tolerance=self.gap_tolerance)
 
 		if not ranges:
 			return expected_top, expected_bottom
@@ -225,21 +226,19 @@ class Animation:
 
 		return best_start, best_end
 
-	def _detect_col_ranges(self, alpha, row_start: int, row_end: int) -> list[tuple[int, int]]:
+	def _detect_col_ranges(self, row_start: int, row_end: int) -> list[tuple[int, int]]:
 		if row_end <= row_start:
 			return []
 
-		row_slice = alpha[row_start:row_end, :]
-		col_mask = (row_slice > self.alpha_threshold).any(axis=0)
+		col_mask = self._column_mask(row_start, row_end)
 
 		return self._mask_to_ranges(col_mask, gap_tolerance=self.gap_tolerance)
 
-	def _fixed_col_ranges(self, alpha, row_start: int, row_end: int) -> list[tuple[int, int]]:
+	def _fixed_col_ranges(self, row_start: int, row_end: int) -> list[tuple[int, int]]:
 		if self.frame_width <= 0 or row_end <= row_start:
 			return []
 
-		row_slice = alpha[row_start:row_end, :]
-		sheet_width = row_slice.shape[1]
+		sheet_width = self.sheet.get_width()
 		step_x = max(1, self.frame_width + self.gap)
 
 		ranges: list[tuple[int, int]] = []
@@ -249,8 +248,7 @@ class Animation:
 			if x_end <= x:
 				continue
 
-			segment = row_slice[:, x:x_end]
-			if segment.size == 0 or not (segment > self.alpha_threshold).any():
+			if not self._surface_has_pixels(x, row_start, x_end - x, row_end - row_start):
 				continue
 
 			ranges.append((x, x_end))
@@ -291,14 +289,14 @@ class Animation:
 
 	def _normalize_frame_sizes(self, width: int, height: int) -> None:
 		for action, frames in self.frames.items():
-			normalized: list[pygame.Surface] = []
+			normalized: list[Any] = []
 
 			for frame in frames:
 				if frame.get_width() == width and frame.get_height() == height:
 					normalized.append(frame)
 					continue
 
-				canvas = pygame.Surface((width, height), pygame.SRCALPHA)
+				canvas = create_surface(width, height, alpha=True)
 
 				offset_x = (width - frame.get_width()) // 2
 				offset_y = height - frame.get_height()
@@ -307,3 +305,42 @@ class Animation:
 				normalized.append(canvas)
 
 			self.frames[action] = normalized
+
+	def _row_mask(self, top: int, bottom: int) -> list[bool]:
+		mask: list[bool] = []
+		for y in range(max(0, top), max(0, bottom)):
+			mask.append(self._row_has_pixels(y))
+		return mask
+
+	def _column_mask(self, row_start: int, row_end: int) -> list[bool]:
+		mask: list[bool] = []
+		sheet_width = self.sheet.get_width()
+
+		for x in range(sheet_width):
+			mask.append(self._column_has_pixels(x, row_start, row_end))
+
+		return mask
+
+	def _row_has_pixels(self, y: int) -> bool:
+		width = self.sheet.get_width()
+		for x in range(width):
+			if self.sheet.get_at((x, y)).a > self.alpha_threshold:
+				return True
+		return False
+
+	def _column_has_pixels(self, x: int, row_start: int, row_end: int) -> bool:
+		for y in range(max(0, row_start), max(0, row_end)):
+			if self.sheet.get_at((x, y)).a > self.alpha_threshold:
+				return True
+		return False
+
+	def _surface_has_pixels(self, start_x: int, start_y: int, width: int, height: int) -> bool:
+		end_x = min(self.sheet.get_width(), start_x + width)
+		end_y = min(self.sheet.get_height(), start_y + height)
+
+		for y in range(max(0, start_y), max(0, end_y)):
+			for x in range(max(0, start_x), max(0, end_x)):
+				if self.sheet.get_at((x, y)).a > self.alpha_threshold:
+					return True
+
+		return False

@@ -4,12 +4,13 @@ import math
 from pathlib import Path
 from typing import Iterable
 
-import pygame
-
 from external.pplay.sprite import Sprite
 
 from src.system.input import Input
-from src.utils.window import get_screen
+import pygame as _pygame
+
+from src.utils.window import get_screen, create_surface, draw_rect, blit_surface
+from src.utils.rect import Rect
 
 
 class Player:
@@ -60,7 +61,7 @@ class Player:
 
 		self.base_radius = max(10.0, min(self.sprite.width, self.sprite.height) * 0.45)
 		self.radius = self.base_radius
-		self._flash_surface: pygame.Surface | None = None
+		self._flash_surface = None
 
 		self.regen_timer = 0.0
 		self.facing = (0.0, 1.0)
@@ -91,7 +92,7 @@ class Player:
 		dt: float,
 		world_width: int,
 		world_height: int,
-		world_bounds: pygame.Rect | None = None,
+		world_bounds: Rect | None = None,
 	) -> None:
 		if self.is_dead():
 			self._blink_on = False
@@ -128,7 +129,7 @@ class Player:
 		self._update_invulnerability(dt)
 		self._update_regen(dt)
 
-	def _clamp_to_world(self, world_width: int, world_height: int, world_bounds: pygame.Rect | None = None) -> None:
+	def _clamp_to_world(self, world_width: int, world_height: int, world_bounds: object | None = None) -> None:
 		if world_bounds is None:
 			min_x = 0.0
 			max_x = float(world_width - self.sprite.width)
@@ -228,11 +229,11 @@ class Player:
 		bar_x = int(self.sprite.x - camera_x)
 		bar_y = int(self.sprite.y - camera_y + self.sprite.height + bar_gap)
 
-		pygame.draw.rect(screen, (200, 0, 0), (bar_x, bar_y, bar_width, bar_height))
+		draw_rect((200, 0, 0), (bar_x, bar_y, bar_width, bar_height), target=screen)
 		missing = int(bar_width * (1.0 - (self.health / self.max_health))) if self.max_health > 0 else bar_width
 
 		if missing > 0:
-			pygame.draw.rect(screen, (0, 0, 0), (bar_x + bar_width - missing, bar_y, missing, bar_height))
+			draw_rect((0, 0, 0), (bar_x + bar_width - missing, bar_y, missing, bar_height), target=screen)
 
 	def _draw_damage_flash(self, camera_x: float, camera_y: float) -> None:
 		if self.invuln_left <= 0.0 or not self._blink_on:
@@ -240,20 +241,35 @@ class Player:
 
 		screen = get_screen()
 
-		width = int(self.sprite.width)
-		height = int(self.sprite.height)
+		# Build the current frame surface similar to Animation.draw so the mask matches rendered sprite
+		# Determine frame rect on the spritesheet
+		frame_w = int(self.sprite.width)
+		frame_h = int(self.sprite.height)
+		frame_index = int(getattr(self.sprite, "frame_atual", 0))
+		area = _pygame.Rect(frame_index * frame_w, 0, frame_w, frame_h)
 
-		if self._flash_surface is None or self._flash_surface.get_size() != (width, height):
-			mask = pygame.mask.from_surface(self.sprite.image)
-			self._flash_surface = mask.to_surface(
-				setcolor=(255, 255, 255, 120),
-				unsetcolor=(0, 0, 0, 0),
-			)
+		frame_surface = self.sprite.image.subsurface(area).copy()
 
-		screen.blit(
-			self._flash_surface,
-			(int(self.sprite.x - camera_x), int(self.sprite.y - camera_y)),
-		)
+		# apply transparency, rotation and scaling like Animation.draw
+		frame_surface.set_alpha(getattr(self.sprite, "transparency", 255))
+		rotation = getattr(self.sprite, "rotation", 0)
+		if rotation != 0:
+			frame_surface = _pygame.transform.rotate(frame_surface, rotation)
+
+		scale_x = getattr(self.sprite, "scale_x", 1.0)
+		scale_y = getattr(self.sprite, "scale_y", 1.0)
+		if scale_x != 1.0 or scale_y != 1.0:
+			nw = max(1, int(frame_surface.get_width() * scale_x))
+			nh = max(1, int(frame_surface.get_height() * scale_y))
+			frame_surface = _pygame.transform.scale(frame_surface, (nw, nh))
+
+		# create a mask from the frame alpha and turn it into a white translucent surface
+		mask = _pygame.mask.from_surface(frame_surface)
+		alpha_val = 120
+		mask_surf = mask.to_surface(setcolor=(255, 255, 255, alpha_val), unsetcolor=(0, 0, 0, 0))
+
+		# blit the masked flash at the sprite position (account for any scaling/rotation offsets by using frame_surface size)
+		blit_surface(mask_surf, (int(self.sprite.x - camera_x), int(self.sprite.y - camera_y)), target=screen)
 
 	def _update_invulnerability(self, dt: float) -> None:
 		if self.invuln_left <= 0.0:

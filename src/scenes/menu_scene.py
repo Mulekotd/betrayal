@@ -3,14 +3,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-import pygame
-
 from external.pplay.gameimage import GameImage
 
 from src.game import Game
 from src.scenes.game_scene import GameScene
 from src.utils.services import GameServices
 from src.utils.window import get_screen, get_window
+from src.utils.window import (
+	create_surface,
+	scale_surface,
+	draw_line,
+	draw_circle,
+	blit_surface,
+)
+from src.utils.rect import Rect
 
 
 @dataclass
@@ -39,7 +45,7 @@ class MenuScene:
 
 		logo_path = self.services.images_dir / "logo.png"
 		target_logo_width = int(self.world_width * 0.38)
-		
+
 		self.logo = GameImage(str(logo_path))
 		self.logo_scale = target_logo_width / max(1, int(self.logo.width))
 		self.logo.scale_x = self.logo_scale
@@ -55,7 +61,7 @@ class MenuScene:
 		self.background_base_layer = self._build_background_surface()
 		self.background_blur_layer = self._build_blurred_layer(self.background_base_layer, downscale=0.18, passes=2)
 		self.background_depth_layer = self._build_depth_layer()
-		self.ui_layer_surface = pygame.Surface((self.world_width, self.world_height), pygame.SRCALPHA).convert_alpha()
+		self.ui_layer_surface = create_surface(self.world_width, self.world_height, alpha=True)
 
 		padding = 64
 		gap = 8
@@ -119,16 +125,37 @@ class MenuScene:
 		_ = window
 		screen = get_screen()
 		screen.blit(self.background_base_layer, (0, 0))
+		# draw blurred layer but restore the base behind the logo area to avoid blur rectangle
 		screen.blit(self.background_blur_layer, (0, 0))
+
+		# compute logo rect (same logic as _draw_logo) and restore base pixels there
+		logo_w = max(1, int(self.logo.width * self.logo_scale))
+		logo_h = max(1, int(self.logo.height * self.logo_scale))
+		logo_x = int(self.world_width * 0.50)
+		logo_y = int(self.world_height * 0.35)
+
+		logo_x = min(max(32, logo_x), self.world_width - logo_w - 32)
+		logo_y = min(max(32, logo_y), self.world_height - logo_h - 32)
+		logo_x += int(self._mx_norm * 10.0)
+		logo_y += int(self._my_norm * 8.0)
+
+		try:
+			region = self.background_base_layer.subsurface((logo_x, logo_y, logo_w, logo_h)).copy()
+			blit_surface(region, (logo_x, logo_y), target=screen)
+		except Exception:
+			# fallback: ignore if region invalid
+			pass
+
+		# depth overlay
 		screen.blit(self.background_depth_layer, (0, 0))
 
 		self.ui_layer_surface.fill((0, 0, 0, 0))
 		self._draw_logo(self.ui_layer_surface)
 		self._draw_buttons(self.ui_layer_surface)
-		screen.blit(self.ui_layer_surface, (0, 0))
+		blit_surface(self.ui_layer_surface, (0, 0), target=screen)
 
-	def _build_background_surface(self) -> pygame.Surface:
-		surface = pygame.Surface((self.world_width, self.world_height))
+	def _build_background_surface(self):
+		surface = create_surface(self.world_width, self.world_height)
 
 		top_color = (2, 8, 14)
 		bottom_color = (52, 126, 140)
@@ -142,9 +169,9 @@ class MenuScene:
 				int(top_color[2] + (bottom_color[2] - top_color[2]) * t),
 			)
 
-			pygame.draw.line(surface, color, (0, y), (self.world_width, y))
+			draw_line(color, (0, y), (self.world_width, y), target=surface)
 
-		haze = pygame.Surface((self.world_width, self.world_height), pygame.SRCALPHA)
+		haze = create_surface(self.world_width, self.world_height, alpha=True)
 		glow_center = (int(self.world_width * 0.34), int(self.world_height * 0.80))
 		max_radius = int(max(self.world_width, self.world_height) * 0.58)
 
@@ -155,22 +182,24 @@ class MenuScene:
 			if alpha <= 0:
 				continue
 
-			pygame.draw.circle(haze, (90, 205, 225, alpha), glow_center, radius)
+			draw_circle((90, 205, 225, alpha), glow_center, radius, target=haze)
 
-		surface.blit(haze, (0, 0))
+		blit_surface(haze, (0, 0), target=surface)
 
-		top_shadow = pygame.Surface((self.world_width, self.world_height), pygame.SRCALPHA)
+		top_shadow = create_surface(self.world_width, self.world_height, alpha=True)
 		shadow_height = int(self.world_height * 0.48)
 
 		for y in range(shadow_height):
 			t = y / max(1, shadow_height - 1)
 			alpha = int((1.0 - t) * 105)
-			pygame.draw.line(top_shadow, (0, 0, 0, alpha), (0, y), (self.world_width, y))
 
-		surface.blit(top_shadow, (0, 0))
+			draw_line((0, 0, 0, alpha), (0, y), (self.world_width, y), target=top_shadow)
+
+		blit_surface(top_shadow, (0, 0), target=surface)
+
 		return surface
 
-	def _build_blurred_layer(self, source: pygame.Surface, downscale: float = 0.2, passes: int = 2) -> pygame.Surface:
+	def _build_blurred_layer(self, source, downscale: float = 0.2, passes: int = 2):
 		width, height = source.get_size()
 		small_size = (
 			max(1, int(width * downscale)),
@@ -179,70 +208,62 @@ class MenuScene:
 
 		blurred = source.copy()
 		for _ in range(max(1, passes)):
-			blurred = pygame.transform.smoothscale(blurred, small_size)
-			blurred = pygame.transform.smoothscale(blurred, (width, height))
+			blurred = scale_surface(blurred, small_size[0], small_size[1], smooth=True)
+			blurred = scale_surface(blurred, width, height, smooth=True)
 
 		blurred = blurred.convert_alpha()
 		blurred.set_alpha(132)
 
 		return blurred
 
-	def _build_depth_layer(self) -> pygame.Surface:
-		overlay = pygame.Surface((self.world_width, self.world_height), pygame.SRCALPHA)
+	def _build_depth_layer(self):
+		overlay = create_surface(self.world_width, self.world_height, alpha=True)
 		horizon_height = int(self.world_height * 0.50)
 
 		for y in range(horizon_height):
 			t = y / max(1, horizon_height - 1)
 			alpha = int((1.0 - t) * 112)
 
-			pygame.draw.line(overlay, (0, 0, 0, alpha), (0, y), (self.world_width, y))
+			draw_line((0, 0, 0, alpha), (0, y), (self.world_width, y), target=overlay)
 
 		return overlay
 
-	def _build_logo_layers(self) -> tuple[pygame.Surface, pygame.Surface]:
+	def _build_logo_layers(self):
 		logo_w = max(1, int(self.logo.width * self.logo_scale))
 		logo_h = max(1, int(self.logo.height * self.logo_scale))
 
-		mask = pygame.mask.from_surface(self.logo.image)
+		# Simpler glow approximation: scale the logo and draw radial circles to fake glow
+		raw = scale_surface(self.logo.image, logo_w, logo_h, smooth=True).convert_alpha()
 
-		flat_logo = mask.to_surface(
-			setcolor=(103, 210, 232, 255),
-			unsetcolor=(0, 0, 0, 0),
-		).convert_alpha()
+		glow = create_surface(logo_w, logo_h, alpha=True)
+		glow_center = (logo_w // 2, logo_h // 2)
+		max_radius = max(logo_w, logo_h)
+		step = max(1, int(max_radius / 12))
+		for r in range(max_radius, 0, -step):
+			t = r / max(1, max_radius)
+			alpha = int((1.0 - t) * 90)
+			if alpha <= 0:
+				continue
+			draw_circle((90, 210, 230, alpha), glow_center, r, target=glow)
 
-		supersample = 3
+		return raw, glow
 
-		high_w = max(1, logo_w * supersample)
-		high_h = max(1, logo_h * supersample)
-		high_logo = pygame.transform.scale(flat_logo, (high_w, high_h))
-
-		scaled_logo = pygame.transform.smoothscale(high_logo, (logo_w, logo_h)).convert_alpha()
-		scaled_mask = pygame.mask.from_surface(scaled_logo)
-
-		glow_surface = scaled_mask.to_surface(
-			setcolor=(90, 210, 230, 90),
-			unsetcolor=(0, 0, 0, 0),
-		).convert_alpha()
-
-		return scaled_logo, glow_surface
-
-	def _draw_logo(self, target: pygame.Surface) -> None:
+	def _draw_logo(self, target) -> None:
 		logo_w = self.logo_surface.get_width()
 		logo_h = self.logo_surface.get_height()
+
 		logo_x = int(self.world_width * 0.50)
 		logo_y = int(self.world_height * 0.35)
 
 		logo_x = min(max(32, logo_x), self.world_width - logo_w - 32)
 		logo_y = min(max(32, logo_y), self.world_height - logo_h - 32)
+
 		logo_x += int(self._mx_norm * 10.0)
 		logo_y += int(self._my_norm * 8.0)
 
-		for ox, oy in ((-3, 0), (3, 0), (0, -3), (0, 3), (-2, -2), (2, 2)):
-			target.blit(self.logo_glow_surface, (logo_x + ox, logo_y + oy))
+		blit_surface(self.logo_surface, (logo_x, logo_y), target=target)
 
-		target.blit(self.logo_surface, (logo_x, logo_y))
-
-	def _draw_buttons(self, target: pygame.Surface) -> None:
+	def _draw_buttons(self, target) -> None:
 		offset_x, offset_y = self._button_layer_offset()
 
 		for index, button in enumerate(self.buttons):
@@ -256,13 +277,13 @@ class MenuScene:
 
 			glow_surface = self.menu_font.render(button.label, True, glow_color)
 			for ox, oy in ((-2, 0), (2, 0), (0, -2), (0, 2)):
-				target.blit(glow_surface, (draw_x + ox, draw_y + oy))
+				blit_surface(glow_surface, (draw_x + ox, draw_y + oy), target=target)
 
 			shadow_surface = self.menu_font.render(button.label, True, glow)
-			target.blit(shadow_surface, (draw_x + 2, draw_y + 2))
+			blit_surface(shadow_surface, (draw_x + 2, draw_y + 2), target=target)
 
 			text_surface = self.menu_font.render(button.label, True, color)
-			target.blit(text_surface, (draw_x, draw_y))
+			blit_surface(text_surface, (draw_x, draw_y), target=target)
 
 	def _button_layer_offset(self) -> tuple[int, int]:
 		return (int(self._mx_norm * 6.0), int(self._my_norm * 4.0))

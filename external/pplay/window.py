@@ -1,5 +1,6 @@
 import pygame
 import sys
+from pathlib import Path
 from pygame.locals import *
 
 """
@@ -150,6 +151,60 @@ class Window:
             img = f.render(str(texto), True, cor)
             self.screen.blit(img, (x, y))
         except: pass
+
+    def load_image(self, image_path, alpha=True):
+        try:
+            image = pygame.image.load(str(image_path))
+            return image.convert_alpha() if alpha else image.convert()
+        except pygame.error:
+            surface = pygame.Surface((32, 32), pygame.SRCALPHA if alpha else 0)
+            surface.fill((255, 0, 255, 255) if alpha else (255, 0, 255))
+            return surface.convert_alpha() if alpha else surface
+
+    def create_surface(self, width, height, alpha=False):
+        surface = pygame.Surface((max(1, int(width)), max(1, int(height))), pygame.SRCALPHA if alpha else 0)
+        return surface.convert_alpha() if alpha else surface
+
+    def scale_surface(self, surface, width, height, smooth=False):
+        size = (max(1, int(width)), max(1, int(height)))
+        if smooth:
+            return pygame.transform.smoothscale(surface, size)
+        return pygame.transform.scale(surface, size)
+
+    def rotate_surface(self, surface, angle_deg):
+        return pygame.transform.rotate(surface, angle_deg)
+
+    def flip_surface(self, surface, flip_x=False, flip_y=False):
+        return pygame.transform.flip(surface, flip_x, flip_y)
+
+    def draw_rect(self, color, rect, width=0, border_radius=0, target=None):
+        surface = self.screen if target is None else target
+        return pygame.draw.rect(surface, color, rect, width, border_radius=border_radius)
+
+    def draw_circle(self, color, center, radius, width=0, target=None):
+        surface = self.screen if target is None else target
+        return pygame.draw.circle(surface, color, center, radius, width)
+
+    def draw_line(self, color, start_pos, end_pos, width=1, target=None):
+        surface = self.screen if target is None else target
+        return pygame.draw.line(surface, color, start_pos, end_pos, width)
+
+    def blit_surface(self, source, pos, target=None):
+        surface = self.screen if target is None else target
+        return surface.blit(source, pos)
+
+    def set_icon(self, icon_path):
+        try:
+            icon_surface = pygame.image.load(str(icon_path))
+            pygame.display.set_icon(icon_surface)
+        except pygame.error:
+            pass
+
+    def load_font(self, font_path, size):
+        return pygame.font.Font(str(font_path), max(1, int(size)))
+
+    def set_mouse_visible(self, visible):
+        pygame.mouse.set_visible(bool(visible))
 
     def screen_to_virtual_coords(self, px, py):
         lw, lh = self.real_screen.get_size()
