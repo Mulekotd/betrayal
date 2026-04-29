@@ -7,9 +7,9 @@ import pygame
 
 from external.pplay.gameimage import GameImage
 
-from src.engine.game import Game
+from src.game import Game
 from src.scenes.game_scene import GameScene
-from src.system.services import GameServices
+from src.utils.services import GameServices
 from src.utils.window import get_screen, get_window
 
 

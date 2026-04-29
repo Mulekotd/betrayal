@@ -9,7 +9,7 @@ from external.pplay.window import Window
 
 from src.system.audio import Audio
 from src.system.input import Input
-from src.system.services import GameServices
+from src.utils.services import GameServices
 
 
 class SceneContract(Protocol):
@@ -41,7 +41,7 @@ class Game:
 		self.window: Any | None = None
 
 		self.input: Input | None = None
-		self.audio = Audio()
+		self.audio: Audio | None = None
 		self.running = False
 		self.current_scene: SceneContract | None = None
 		self.services: GameServices | None = None
@@ -63,7 +63,10 @@ class Game:
 			font_path=font_path,
 		)
 
+		self.audio = Audio()
+
 		icon_path = assets_dir / "images" / "icon.ico"
+		theme_path = assets_dir / "sounds" / "theme.ogg"
 
 		if icon_path.exists():
 			try:
@@ -71,6 +74,16 @@ class Game:
 				pygame.display.set_icon(icon_surface)
 			except pygame.error:
 				pass
+
+		if theme_path.exists():
+			theme_key = "theme"
+			self.audio.load_sound(theme_key, str(theme_path))
+
+			if theme_key in self.audio._sounds:
+				self.audio.play_sound(theme_key, repeat=True)
+			else:
+				self.audio.load_music(str(theme_path), key=theme_key)
+				self.audio.play_music(repeat=True)
 
 		self.input = Input()
 		# Use the Keyboard/Mouse objects created by Window.

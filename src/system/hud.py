@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pygame
 
-from src.system.services import FontLibrary
+from src.utils.services import FontLibrary
 from src.utils.window import get_screen
 
 class HUD:

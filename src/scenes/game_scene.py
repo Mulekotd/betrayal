@@ -7,13 +7,13 @@ from typing import Any
 import pygame
 from external.pplay.gameimage import GameImage
 
+from src.engine.camera import Camera
 from src.engine.world import World
 from src.entities.enemy import EnemyManager
 from src.entities.player import Player
-from src.system.camera import Camera
 from src.system.input import Input
 from src.system.hud import HUD
-from src.system.services import GameServices
+from src.utils.services import GameServices
 from src.utils.window import get_screen
 
 
