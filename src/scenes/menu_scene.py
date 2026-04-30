@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -16,7 +14,6 @@ from src.utils.window import (
 	draw_circle,
 	blit_surface,
 )
-from src.utils.rect import Rect
 
 
 @dataclass
@@ -125,10 +122,8 @@ class MenuScene:
 		_ = window
 		screen = get_screen()
 		screen.blit(self.background_base_layer, (0, 0))
-		# draw blurred layer but restore the base behind the logo area to avoid blur rectangle
 		screen.blit(self.background_blur_layer, (0, 0))
 
-		# compute logo rect (same logic as _draw_logo) and restore base pixels there
 		logo_w = max(1, int(self.logo.width * self.logo_scale))
 		logo_h = max(1, int(self.logo.height * self.logo_scale))
 		logo_x = int(self.world_width * 0.50)
@@ -143,7 +138,6 @@ class MenuScene:
 			region = self.background_base_layer.subsurface((logo_x, logo_y, logo_w, logo_h)).copy()
 			blit_surface(region, (logo_x, logo_y), target=screen)
 		except Exception:
-			# fallback: ignore if region invalid
 			pass
 
 		# depth overlay
@@ -152,6 +146,7 @@ class MenuScene:
 		self.ui_layer_surface.fill((0, 0, 0, 0))
 		self._draw_logo(self.ui_layer_surface)
 		self._draw_buttons(self.ui_layer_surface)
+
 		blit_surface(self.ui_layer_surface, (0, 0), target=screen)
 
 	def _build_background_surface(self):
@@ -177,8 +172,8 @@ class MenuScene:
 
 		for radius in range(max_radius, 0, -8):
 			t = radius / max(1, max_radius)
-
 			alpha = int((1.0 - t) * (1.0 - t) * 100)
+
 			if alpha <= 0:
 				continue
 
@@ -232,18 +227,20 @@ class MenuScene:
 		logo_w = max(1, int(self.logo.width * self.logo_scale))
 		logo_h = max(1, int(self.logo.height * self.logo_scale))
 
-		# Simpler glow approximation: scale the logo and draw radial circles to fake glow
 		raw = scale_surface(self.logo.image, logo_w, logo_h, smooth=True).convert_alpha()
 
 		glow = create_surface(logo_w, logo_h, alpha=True)
 		glow_center = (logo_w // 2, logo_h // 2)
+
 		max_radius = max(logo_w, logo_h)
 		step = max(1, int(max_radius / 12))
 		for r in range(max_radius, 0, -step):
 			t = r / max(1, max_radius)
 			alpha = int((1.0 - t) * 90)
+
 			if alpha <= 0:
 				continue
+
 			draw_circle((90, 210, 230, alpha), glow_center, r, target=glow)
 
 		return raw, glow

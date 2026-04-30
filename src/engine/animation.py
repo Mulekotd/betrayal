@@ -1,11 +1,9 @@
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Iterable
 
 from typing import Any
 
-from src.utils.window import create_surface, flip_surface, load_image, scale_surface
+from src.utils.window import create_surface, flip_surface, load_image
 
 
 class Animation:
@@ -103,7 +101,6 @@ class Animation:
 		return len(frames) * self.frame_rate
 
 	def _slice_hybrid(self) -> None:
-		# Hybrid parser: uses fixed rows (grid guidance) and auto-detected columns.
 		sheet_height = self.sheet.get_height()
 		step_y = max(1, self.frame_height + self.gap)
 
@@ -308,8 +305,10 @@ class Animation:
 
 	def _row_mask(self, top: int, bottom: int) -> list[bool]:
 		mask: list[bool] = []
+
 		for y in range(max(0, top), max(0, bottom)):
 			mask.append(self._row_has_pixels(y))
+
 		return mask
 
 	def _column_mask(self, row_start: int, row_end: int) -> list[bool]:
@@ -323,15 +322,18 @@ class Animation:
 
 	def _row_has_pixels(self, y: int) -> bool:
 		width = self.sheet.get_width()
+
 		for x in range(width):
 			if self.sheet.get_at((x, y)).a > self.alpha_threshold:
 				return True
+
 		return False
 
 	def _column_has_pixels(self, x: int, row_start: int, row_end: int) -> bool:
 		for y in range(max(0, row_start), max(0, row_end)):
 			if self.sheet.get_at((x, y)).a > self.alpha_threshold:
 				return True
+
 		return False
 
 	def _surface_has_pixels(self, start_x: int, start_y: int, width: int, height: int) -> bool:

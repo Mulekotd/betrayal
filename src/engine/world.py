@@ -1,11 +1,10 @@
-from __future__ import annotations
-
 import math
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-from src.utils.rect import Rect
+
+from src.utils.box import Rect
 
 from src.engine.tileset import TileObject, TileSet
 

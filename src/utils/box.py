@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from external.pplay.collision import Collision
+
 
 @dataclass
 class Rect:
@@ -57,12 +59,7 @@ class Rect:
 		return Rect(new_left, new_top, new_width, new_height)
 
 	def colliderect(self, other: Rect) -> bool:
-		return (
-			self.left < other.right
-			and self.right > other.left
-			and self.top < other.bottom
-			and self.bottom > other.top
-		)
+		return Collision.collided(self, other)
 
 	def clamp_within(self, bounds: Rect) -> Rect:
 		left = max(bounds.left, min(self.left, bounds.right - self.width))

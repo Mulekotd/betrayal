@@ -1,7 +1,6 @@
-from __future__ import annotations
-
 from src.utils.services import FontLibrary
 from src.utils.window import draw_rect, get_screen
+
 
 class HUD:
 	def __init__(self, viewport_width: int, viewport_height: int, fonts: FontLibrary, padding: int = 0) -> None:
@@ -18,6 +17,7 @@ class HUD:
 		bar_margin = self.padding
 		bar_height = 22
 		bar_width = max(0, self.viewport_width - (bar_margin * 2))
+
 		bar_x = bar_margin
 		bar_y = bar_margin
 
@@ -25,6 +25,7 @@ class HUD:
 
 		xp_value = int(getattr(player, "xp", 0))
 		xp_to_next = max(1, int(getattr(player, "xp_to_next", 1)))
+
 		fill_ratio = min(1.0, max(0.0, xp_value / xp_to_next))
 		fill_width = int(bar_width * fill_ratio)
 
@@ -32,10 +33,12 @@ class HUD:
 			draw_rect((30, 120, 255), (bar_x, bar_y, fill_width, bar_height))
 
 		level = int(getattr(player, "level", 1))
+
 		label = f"LV {level}"
 		label_surface = self.font_small.render(label, True, (255, 255, 255))
 		label_x = bar_x + bar_width - label_surface.get_width() - 8
 		label_y = bar_y + (bar_height - label_surface.get_height()) // 2
+
 		screen = get_screen()
 		screen.blit(label_surface, (label_x, label_y))
 

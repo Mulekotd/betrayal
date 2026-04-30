@@ -15,7 +15,7 @@ from src.system.hud import HUD
 from src.utils.services import GameServices
 from src.utils.window import get_screen
 from src.utils.window import load_image, create_surface, draw_rect, blit_surface, set_mouse_visible, scale_surface
-from src.utils.rect import Rect
+from src.utils.box import Rect
 
 
 class GameScene:

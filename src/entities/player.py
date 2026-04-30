@@ -1,16 +1,14 @@
-from __future__ import annotations
-
 import math
 from pathlib import Path
 from typing import Iterable
 
+import pygame
+
 from external.pplay.sprite import Sprite
 
 from src.system.input import Input
-import pygame as _pygame
-
-from src.utils.window import get_screen, create_surface, draw_rect, blit_surface
-from src.utils.rect import Rect
+from src.utils.window import get_screen, draw_rect, blit_surface
+from src.utils.box import Rect
 
 
 class Player:
@@ -212,12 +210,28 @@ class Player:
 		self._draw_damage_flash(camera_x, camera_y)
 
 	def _draw_with_camera(self, sprite: Sprite, camera_x: float, camera_y: float) -> None:
-		world_x = sprite.x
-		world_y = sprite.y
+		screen = get_screen()
 
-		sprite.set_position(world_x - camera_x, world_y - camera_y)
-		sprite.draw()
-		sprite.set_position(world_x, world_y)
+		frame_w = int(sprite.width)
+		frame_h = int(sprite.height)
+		frame_index = int(getattr(sprite, "frame_atual", 0))
+		area = pygame.Rect(frame_index * frame_w, 0, frame_w, frame_h)
+
+		frame_surface = sprite.image.subsurface(area).copy()
+
+		frame_surface.set_alpha(getattr(sprite, "transparency", 255))
+		rotation = getattr(sprite, "rotation", 0)
+		if rotation != 0:
+			frame_surface = pygame.transform.rotate(frame_surface, rotation)
+
+		scale_x = getattr(sprite, "scale_x", 1.0)
+		scale_y = getattr(sprite, "scale_y", 1.0)
+		if scale_x != 1.0 or scale_y != 1.0:
+			nw = max(1, int(frame_surface.get_width() * scale_x))
+			nh = max(1, int(frame_surface.get_height() * scale_y))
+			frame_surface = pygame.transform.scale(frame_surface, (nw, nh))
+
+		blit_surface(frame_surface, (int(sprite.x - camera_x), int(sprite.y - camera_y)), target=screen)
 
 
 	def _draw_health_bar(self, camera_x: float, camera_y: float) -> None:
@@ -241,34 +255,29 @@ class Player:
 
 		screen = get_screen()
 
-		# Build the current frame surface similar to Animation.draw so the mask matches rendered sprite
-		# Determine frame rect on the spritesheet
 		frame_w = int(self.sprite.width)
 		frame_h = int(self.sprite.height)
 		frame_index = int(getattr(self.sprite, "frame_atual", 0))
-		area = _pygame.Rect(frame_index * frame_w, 0, frame_w, frame_h)
+		area = pygame.Rect(frame_index * frame_w, 0, frame_w, frame_h)
 
 		frame_surface = self.sprite.image.subsurface(area).copy()
 
-		# apply transparency, rotation and scaling like Animation.draw
 		frame_surface.set_alpha(getattr(self.sprite, "transparency", 255))
 		rotation = getattr(self.sprite, "rotation", 0)
 		if rotation != 0:
-			frame_surface = _pygame.transform.rotate(frame_surface, rotation)
+			frame_surface = pygame.transform.rotate(frame_surface, rotation)
 
 		scale_x = getattr(self.sprite, "scale_x", 1.0)
 		scale_y = getattr(self.sprite, "scale_y", 1.0)
 		if scale_x != 1.0 or scale_y != 1.0:
 			nw = max(1, int(frame_surface.get_width() * scale_x))
 			nh = max(1, int(frame_surface.get_height() * scale_y))
-			frame_surface = _pygame.transform.scale(frame_surface, (nw, nh))
+			frame_surface = pygame.transform.scale(frame_surface, (nw, nh))
 
-		# create a mask from the frame alpha and turn it into a white translucent surface
-		mask = _pygame.mask.from_surface(frame_surface)
+		mask = pygame.mask.from_surface(frame_surface)
 		alpha_val = 120
 		mask_surf = mask.to_surface(setcolor=(255, 255, 255, alpha_val), unsetcolor=(0, 0, 0, 0))
 
-		# blit the masked flash at the sprite position (account for any scaling/rotation offsets by using frame_surface size)
 		blit_surface(mask_surf, (int(self.sprite.x - camera_x), int(self.sprite.y - camera_y)), target=screen)
 
 	def _update_invulnerability(self, dt: float) -> None:

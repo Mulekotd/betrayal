@@ -1,11 +1,9 @@
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Any, List, Tuple
 
 import pygame as _pygame
 
-from src.utils.rect import Rect
+from src.utils.box import Rect
 from src.utils.window import load_image, scale_surface
 
 
@@ -66,6 +64,7 @@ class TileSet:
 
     def _slice_grid(self, full: Any, fw: int, fh: int, tw: int, th: int, gap: int, scale: float) -> None:
         y = 0
+
         while y + th <= fh:
             x = 0
             while x + tw <= fw:
@@ -79,10 +78,10 @@ class TileSet:
                 x += tw + gap
             if th == fh:
                 break
+
             y += th + gap
 
     def _slice_by_alpha(self, full: Any, fw: int, fh: int, gap: int, scale: float) -> None:
-        # Flood-fill connected components on alpha channel to get separate sprites
         visited = [[False] * fh for _ in range(fw)]
 
         def get_alpha(x: int, y: int) -> int:
@@ -98,7 +97,6 @@ class TileSet:
                     visited[x][y] = True
                     continue
 
-                # new component
                 stack: List[Tuple[int, int]] = [(x, y)]
                 visited[x][y] = True
                 minx, maxx = x, x

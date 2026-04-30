@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from external.pplay.sound import Music, Sound, SoundManager
 
 
