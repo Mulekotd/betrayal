@@ -29,7 +29,7 @@ class GameScene:
 		self.world = World(
 			images_dir=assets_dir,
 			viewport_width=self.viewport_width,
-			viewport_height=self.viewport_height,
+			viewport_height=self.viewport_height
 		)
 		self.world_width = self.world.width
 		self.world_height = self.world.height
@@ -53,7 +53,7 @@ class GameScene:
 		self.player = Player(
 			assets_dir=assets_dir,
 			spawn_x=spawn_x,
-			spawn_y=spawn_y,
+			spawn_y=spawn_y
 		)
 		
 		self.player.init_progression()
@@ -61,7 +61,7 @@ class GameScene:
 		self.enemy_manager = EnemyManager(
 			assets_dir=assets_dir,
 			world_width=self.world_width,
-			world_height=self.world_height,
+			world_height=self.world_height
 		)
 		self.enemy_manager.set_world_bounds(self.world.bounds)
 		self.world.rebuild(player_center=self.player.center, player_radius=self.player.radius)
@@ -85,7 +85,7 @@ class GameScene:
 			viewport_width=self.viewport_width,
 			viewport_height=self.viewport_height,
 			fonts=self.services.fonts,
-			padding=64,
+			padding=64
 		)
 
 		self.player_dead = False
@@ -112,7 +112,7 @@ class GameScene:
 			dt,
 			self.world_width,
 			self.world_height,
-			world_bounds=self.world.bounds,
+			world_bounds=self.world.bounds
 		)
 		self._resolve_player_static_collisions()
 		before_update = len(self.enemy_manager.get_enemies())
@@ -162,12 +162,7 @@ class GameScene:
 			self._draw_game_over_overlay()
 
 		mouse_x, mouse_y = window.get_mouse().get_position()
-
-		self.cursor.set_position(
-			mouse_x - self.cursor_hotspot_x,
-			mouse_y - self.cursor_hotspot_y,
-		)
-
+		self.cursor.set_position(mouse_x - self.cursor_hotspot_x, mouse_y - self.cursor_hotspot_y)
 		self.cursor.draw()
 
 	def _draw_tiled_ground(self) -> None:
@@ -192,7 +187,7 @@ class GameScene:
 		self.player = Player(
 			assets_dir=assets_dir,
 			spawn_x=float(self.world.bounds.centerx),
-			spawn_y=float(self.world.bounds.centery),
+			spawn_y=float(self.world.bounds.centery)
 		)
 		self.player.init_progression()
 
@@ -376,8 +371,8 @@ class GameScene:
 		mouse = input_manager.mouse
 		mx, my = mouse.get_position()
 		_, option_rects = self._get_level_up_layout()
-		self.level_up_hover = None
 
+		self.level_up_hover = None
 		for index, rect in enumerate(option_rects):
 			if rect.left <= mx <= rect.right and rect.top <= my <= rect.bottom:
 				self.level_up_hover = index
@@ -419,7 +414,7 @@ class GameScene:
 			"defense": "Armor",
 			"strength": "Strength",
 			"move_speed": "Move Speed",
-			"attack_speed": "Attack Speed",
+			"attack_speed": "Attack Speed"
 		}
 
 		for index, rect in enumerate(option_rects):

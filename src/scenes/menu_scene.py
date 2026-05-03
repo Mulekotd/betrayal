@@ -12,7 +12,7 @@ from src.utils.window import (
 	scale_surface,
 	draw_line,
 	draw_circle,
-	blit_surface,
+	blit_surface
 )
 
 
@@ -69,7 +69,7 @@ class MenuScene:
 		labels = [
 			("PLAY", self._start_game),
 			("OPTIONS", self._placeholder),
-			("QUIT", self._quit_game),
+			("QUIT", self._quit_game)
 		]
 
 		self.buttons = []
@@ -85,7 +85,7 @@ class MenuScene:
 					y=cursor_y,
 					width=surface.get_width(),
 					height=surface.get_height(),
-					action=action,
+					action=action
 				)
 			)
 
@@ -140,7 +140,6 @@ class MenuScene:
 		except Exception:
 			pass
 
-		# depth overlay
 		screen.blit(self.background_depth_layer, (0, 0))
 
 		self.ui_layer_surface.fill((0, 0, 0, 0))
@@ -161,7 +160,7 @@ class MenuScene:
 			color = (
 				int(top_color[0] + (bottom_color[0] - top_color[0]) * t),
 				int(top_color[1] + (bottom_color[1] - top_color[1]) * t),
-				int(top_color[2] + (bottom_color[2] - top_color[2]) * t),
+				int(top_color[2] + (bottom_color[2] - top_color[2]) * t)
 			)
 
 			draw_line(color, (0, y), (self.world_width, y), target=surface)
@@ -196,10 +195,7 @@ class MenuScene:
 
 	def _build_blurred_layer(self, source, downscale: float = 0.2, passes: int = 2):
 		width, height = source.get_size()
-		small_size = (
-			max(1, int(width * downscale)),
-			max(1, int(height * downscale)),
-		)
+		small_size = (max(1, int(width * downscale)), max(1, int(height * downscale)))
 
 		blurred = source.copy()
 		for _ in range(max(1, passes)):
@@ -290,7 +286,7 @@ class MenuScene:
 			GameScene(
 				services=self.services,
 				world_width=self.world_width,
-				world_height=self.world_height,
+				world_height=self.world_height
 			)
 		)
 

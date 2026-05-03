@@ -22,7 +22,7 @@ class Player:
 		strength: int = 6,
 		max_health: int = 100,
 		health_regen: float = 0.02,
-		defense: int = 2,
+		defense: int = 2
 	) -> None:
 		self.assets_dir = Path(assets_dir)
 
@@ -35,7 +35,7 @@ class Player:
 			"defense": defense,
 			"strength": strength,
 			"move_speed": move_speed,
-			"attack_speed": attack_speed,
+			"attack_speed": attack_speed
 		}
 
 		self.attribute_levels = {
@@ -44,7 +44,7 @@ class Player:
 			"defense": 0,
 			"strength": 0,
 			"move_speed": 0,
-			"attack_speed": 0,
+			"attack_speed": 0
 		}
 
 		self.max_attribute_level = 5
@@ -78,7 +78,7 @@ class Player:
 	def center(self) -> tuple[float, float]:
 		return (
 			self.sprite.x + self.sprite.width * 0.5,
-			self.sprite.y + self.sprite.height * 0.5,
+			self.sprite.y + self.sprite.height * 0.5
 		)
 
 	def is_dead(self) -> bool:
@@ -90,7 +90,7 @@ class Player:
 		dt: float,
 		world_width: int,
 		world_height: int,
-		world_bounds: Rect | None = None,
+		world_bounds: Rect | None = None
 	) -> None:
 		if self.is_dead():
 			self._blink_on = False
@@ -218,14 +218,15 @@ class Player:
 		area = pygame.Rect(frame_index * frame_w, 0, frame_w, frame_h)
 
 		frame_surface = sprite.image.subsurface(area).copy()
-
 		frame_surface.set_alpha(getattr(sprite, "transparency", 255))
+
 		rotation = getattr(sprite, "rotation", 0)
 		if rotation != 0:
 			frame_surface = pygame.transform.rotate(frame_surface, rotation)
 
 		scale_x = getattr(sprite, "scale_x", 1.0)
 		scale_y = getattr(sprite, "scale_y", 1.0)
+
 		if scale_x != 1.0 or scale_y != 1.0:
 			nw = max(1, int(frame_surface.get_width() * scale_x))
 			nh = max(1, int(frame_surface.get_height() * scale_y))
@@ -261,14 +262,15 @@ class Player:
 		area = pygame.Rect(frame_index * frame_w, 0, frame_w, frame_h)
 
 		frame_surface = self.sprite.image.subsurface(area).copy()
-
 		frame_surface.set_alpha(getattr(self.sprite, "transparency", 255))
+
 		rotation = getattr(self.sprite, "rotation", 0)
 		if rotation != 0:
 			frame_surface = pygame.transform.rotate(frame_surface, rotation)
 
 		scale_x = getattr(self.sprite, "scale_x", 1.0)
 		scale_y = getattr(self.sprite, "scale_y", 1.0)
+
 		if scale_x != 1.0 or scale_y != 1.0:
 			nw = max(1, int(frame_surface.get_width() * scale_x))
 			nh = max(1, int(frame_surface.get_height() * scale_y))
@@ -326,6 +328,7 @@ class Player:
 	def upgrade_attribute(self, name: str) -> bool:
 		if name not in self.attribute_levels:
 			return False
+
 		if self.attribute_levels[name] >= self.max_attribute_level:
 			return False
 

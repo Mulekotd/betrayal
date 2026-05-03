@@ -126,6 +126,9 @@ class TileSet:
                 bw = maxx - minx + 1
                 bh = maxy - miny + 1
 
+                if bw < 4 and bh < 4:
+                    continue
+
                 # extract surface
                 surf = _pygame.Surface((bw, bh), flags=_pygame.SRCALPHA)
                 surf.blit(full, (0, 0), (minx, miny, bw, bh))

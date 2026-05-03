@@ -152,7 +152,6 @@ class Audio:
 		if sound is None:
 			return False
 
-		# Sound class wraps pygame.mixer.Sound at attribute `sound`.
 		raw_sound = getattr(sound, "sound", None)
 
 		if raw_sound is None:

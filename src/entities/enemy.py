@@ -33,7 +33,7 @@ class Enemy:
 		base_speed: float = 150.0,
 		base_damage: int = 12,
 		xp_value: int = 6,
-		armor: float = 0.0,
+		armor: float = 0.0
 	) -> None:
 		self.animation = Animation(
 			sprite_path=sprite_path,
@@ -41,7 +41,7 @@ class Enemy:
 			height=frame_height,
 			gap=frame_gap,
 			actions=actions,
-			frame_rate=frame_rate,
+			frame_rate=frame_rate
 		)
 
 		self.x = 0.0
@@ -114,7 +114,7 @@ class Enemy:
 	def center(self) -> tuple[float, float]:
 		return (
 			self.x + self.width * 0.5,
-			self.y + self.height * 0.5,
+			self.y + self.height * 0.5
 		)
 
 	def move_by(self, dx: float, dy: float) -> None:
@@ -126,10 +126,8 @@ class Enemy:
 		target_x: float,
 		target_y: float,
 		dt: float,
-		player: object | None = None,
-		spawn_projectile: Callable[[float, float, float, float, int], None] | None = None,
 		move_target_x: float | None = None,
-		move_target_y: float | None = None,
+		move_target_y: float | None = None
 	) -> None:
 		self._update_statuses(dt)
 		self.animation.update(int(dt * 1000))
@@ -144,22 +142,22 @@ class Enemy:
 
 		cx, cy = self.center
 		dx = target_x - cx
-		dy = target_y - cy
 		self.facing_dir = -1 if dx < 0 else 1
 
 		move_x = target_x if move_target_x is None else move_target_x
 		move_y = target_y if move_target_y is None else move_target_y
+
 		move_dx = move_x - cx
 		move_dy = move_y - cy
-		move_dist_sq = move_dx * move_dx + move_dy * move_dy
 
+		move_dist_sq = move_dx * move_dx + move_dy * move_dy
 		if move_dist_sq <= 0.000001:
 			self._set_state(EnemyAction.IDLE)
 			return
 
 		inv_dist = 1.0 / math.sqrt(move_dist_sq)
-
 		speed = self.speed * self.slow_factor
+
 		self.x += move_dx * inv_dist * speed * dt
 		self.y += move_dy * inv_dist * speed * dt
 
@@ -169,14 +167,13 @@ class Enemy:
 		self.animation.play(self.state_machine.state.value)
 
 	def _action_for_name(self, action: str) -> EnemyAction:
-		try:
-			return EnemyAction(action)
-		except ValueError:
-			return EnemyAction.IDLE
+		try: return EnemyAction(action)
+		except ValueError: return EnemyAction.IDLE
 
 	def _set_state(self, state: EnemyAction) -> None:
 		if self.state_machine.state != state:
 			self.state_machine.set(state)
+
 		self._sync_state_animation()
 
 	def take_damage(self, amount: int) -> None:
@@ -199,15 +196,17 @@ class Enemy:
 			self.freeze_timer = max(self.freeze_timer, freeze_duration)
 
 	def _update_statuses(self, dt: float) -> None:
+		# Armor does not reduce burn damage (fire bypasses armor).
 		if self.burn_timer > 0.0:
 			self.burn_timer = max(0.0, self.burn_timer - dt)
-			# Armor does not reduce burn damage (fire bypasses armor).
 			self.health -= self.burn_dps * dt
+
 			if self.burn_timer <= 0.0:
 				self.burn_dps = 0.0
 
 		if self.slow_timer > 0.0:
 			self.slow_timer = max(0.0, self.slow_timer - dt)
+
 			if self.slow_timer <= 0.0:
 				self.slow_factor = 1.0
 
@@ -219,13 +218,10 @@ class Enemy:
 
 	def draw(self, camera_x: float = 0.0, camera_y: float = 0.0) -> None:
 		screen = get_screen()
-
 		frame = self.animation.get_frame_flipped(flip_x=self.facing_dir < 0)
 
-		if frame is None:
-			return
-		if self.sprite_scale != 1.0:
-			frame = scale_surface(frame, int(self.width), int(self.height))
+		if frame is None: return
+		if self.sprite_scale != 1.0: frame = scale_surface(frame, int(self.width), int(self.height))
 
 		blit_surface(frame, (self.x - camera_x, self.y - camera_y), target=screen)
 
@@ -243,7 +239,7 @@ class Enemy:
 #   Armor:  0.05  (5% damage reduction — almost none)
 #   HP:     35
 #   Speed:  145
-#   Damage: 22  (arrow hit — high)
+#   Damage: 22
 #   XP:     10
 # ---------------------------------------------------------------------------
 class Soldier(Enemy):
@@ -251,13 +247,11 @@ class Soldier(Enemy):
 		self,
 		sprite_path: str | Path,
 		is_ranged: bool,
-		# Melee defaults
 		base_health: int = 60,
 		base_speed: float = 120.0,
 		base_damage: int = 8,
-		xp_value: int = 8,
+		xp_value: int = 8
 	) -> None:
-		# Override stats for ranged (archer) variant
 		if is_ranged:
 			base_health = 35
 			base_speed = 145.0
@@ -277,8 +271,9 @@ class Soldier(Enemy):
 			base_speed=base_speed,
 			base_damage=base_damage,
 			xp_value=xp_value,
-			armor=armor,
+			armor=armor
 		)
+
 		self.is_ranged = is_ranged
 		self.base_scale = 1.5
 		self.set_scale(1.0)
@@ -315,6 +310,7 @@ class Soldier(Enemy):
 	) -> None:
 		self._update_statuses(dt)
 		self.animation.update(int(dt * 1000))
+
 		self.attack_timer = max(0.0, self.attack_timer - dt)
 		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
 
@@ -333,7 +329,7 @@ class Soldier(Enemy):
 			target_dx=dx,
 			target_dy=dy,
 			spawn_projectile=spawn_projectile,
-			force=self.attack_anim_time_left <= 0.0,
+			force=self.attack_anim_time_left <= 0.0
 		)
 
 		if dist_sq <= 0.000001:
@@ -372,6 +368,7 @@ class Soldier(Enemy):
 				attack_action = self.melee_attack_actions[self.next_melee_attack_index]
 				self.next_melee_attack_index = (self.next_melee_attack_index + 1) % len(self.melee_attack_actions)
 				self._play_attack(attack_action)
+
 				damage_fn = getattr(player, "take_damage", None)
 				if callable(damage_fn):
 					damage_fn(self.damage)
@@ -381,18 +378,21 @@ class Soldier(Enemy):
 
 		move_x = target_x if move_target_x is None else move_target_x
 		move_y = target_y if move_target_y is None else move_target_y
+
 		move_dx = move_x - cx
 		move_dy = move_y - cy
-		move_dist_sq = move_dx * move_dx + move_dy * move_dy
 
+		move_dist_sq = move_dx * move_dx + move_dy * move_dy
 		if move_dist_sq <= 0.000001:
 			self._set_state(EnemyAction.IDLE)
 			return
 
 		inv_dist = 1.0 / math.sqrt(move_dist_sq)
 		speed = self.speed * self.slow_factor
+
 		self.x += move_dx * inv_dist * speed * dt
 		self.y += move_dy * inv_dist * speed * dt
+
 		self._set_state(EnemyAction.WALK)
 
 	def _try_release_ranged_shot(
@@ -402,7 +402,7 @@ class Soldier(Enemy):
 		target_dx: float,
 		target_dy: float,
 		spawn_projectile: Callable[[float, float, float, float, int], None] | None,
-		force: bool = False,
+		force: bool = False
 	) -> None:
 		if not self.pending_ranged_shot or self.ranged_shot_fired:
 			return
@@ -448,10 +448,9 @@ class Soldier(Enemy):
 # Knight — heavy melee bruiser
 #   Armor:  0.35  (35% damage reduction — tankiest of the three)
 #   HP:     100
-#   Speed:  80  (slowest — lumbers toward the player)
-#   Damage: 15  (between Soldier's 8 and Archer's 22)
+#   Speed:  80  (slowest)
+#   Damage: 15
 #   XP:     15
-#   Two attack animations: ATTACK_1, ATTACK_2
 #   Cooldown: 1.2 s  (slower swing than the Soldier)
 # ---------------------------------------------------------------------------
 class Knight(Enemy):
@@ -461,7 +460,7 @@ class Knight(Enemy):
 		base_health: int = 100,
 		base_speed: float = 80.0,
 		base_damage: int = 15,
-		xp_value: int = 15,
+		xp_value: int = 15
 	) -> None:
 		super().__init__(
 			sprite_path=sprite_path,
@@ -474,7 +473,7 @@ class Knight(Enemy):
 			base_speed=base_speed,
 			base_damage=base_damage,
 			xp_value=xp_value,
-			armor=0.35,
+			armor=0.35
 		)
 		self.base_scale = 1.5
 		self.set_scale(1.0)
@@ -501,7 +500,7 @@ class Knight(Enemy):
 		player: object | None = None,
 		spawn_projectile: Callable[[float, float, float, float, int], None] | None = None,
 		move_target_x: float | None = None,
-		move_target_y: float | None = None,
+		move_target_y: float | None = None
 	) -> None:
 		self._update_statuses(dt)
 		self.animation.update(int(dt * 1000))
@@ -516,8 +515,8 @@ class Knight(Enemy):
 		dx = target_x - cx
 		dy = target_y - cy
 		self.facing_dir = -1 if dx < 0 else 1
-		dist_sq = dx * dx + dy * dy
 
+		dist_sq = dx * dx + dy * dy
 		if dist_sq <= 0.000001:
 			self._set_state(EnemyAction.IDLE)
 			return
@@ -536,6 +535,7 @@ class Knight(Enemy):
 				attack_action = self.melee_attack_actions[self.next_melee_attack_index]
 				self.next_melee_attack_index = (self.next_melee_attack_index + 1) % len(self.melee_attack_actions)
 				self._play_attack(attack_action)
+
 				damage_fn = getattr(player, "take_damage", None)
 				if callable(damage_fn):
 					damage_fn(self.damage)
@@ -545,10 +545,11 @@ class Knight(Enemy):
 
 		move_x = target_x if move_target_x is None else move_target_x
 		move_y = target_y if move_target_y is None else move_target_y
+
 		move_dx = move_x - cx
 		move_dy = move_y - cy
-		move_dist_sq = move_dx * move_dx + move_dy * move_dy
 
+		move_dist_sq = move_dx * move_dx + move_dy * move_dy
 		if move_dist_sq <= 0.000001:
 			self._set_state(EnemyAction.IDLE)
 			return
@@ -610,7 +611,7 @@ class EnemyManager:
 		world_height: int,
 		base_spawn_rate: float = 0.12,
 		spawn_growth: float = 0.06,
-		max_spawn_rate: float = 2.0,
+		max_spawn_rate: float = 2.0
 	) -> None:
 		self.assets_dir = Path(assets_dir)
 		self.world_width = world_width
@@ -653,7 +654,7 @@ class EnemyManager:
 		self.spawn_weights = [
 			(lambda: Soldier(self.soldier_sprite_path, is_ranged=False), 0.5),
 			(lambda: Soldier(self.soldier_sprite_path, is_ranged=True), 0.3),
-			(lambda: Knight(self.knight_sprite_path), 0.2),
+			(lambda: Knight(self.knight_sprite_path), 0.2)
 		]
 
 	def update(self, player: object, dt: float) -> int:
@@ -667,13 +668,12 @@ class EnemyManager:
 				target_y,
 				dt,
 				player=player,
-				spawn_projectile=self._spawn_arrow,
+				spawn_projectile=self._spawn_arrow
 			)
 			self._resolve_enemy_static_collisions(enemy)
 			self._clamp_enemy_to_world(enemy)
 
 		self._update_arrows(player, dt)
-
 		self._resolve_enemy_collisions()
 
 		for enemy in self.active:
@@ -689,9 +689,9 @@ class EnemyManager:
 				arrow_surface,
 				(
 					arrow.x - camera_x - arrow_surface.get_width() * 0.5,
-					arrow.y - camera_y - arrow_surface.get_height() * 0.5,
+					arrow.y - camera_y - arrow_surface.get_height() * 0.5
 				),
-				target=get_screen(),
+				target=get_screen()
 			)
 
 		for enemy in self.active:
@@ -736,21 +736,26 @@ class EnemyManager:
 	def _spawn_enemy(self, target_x: float, target_y: float) -> None:
 		enemy = self.pool.pop() if self.pool else self._create_enemy()
 		speed_multiplier = min(2.5, 1.0 + self.elapsed_time * 0.01)
+
 		x, y = self._pick_spawn_position(enemy, target_x=target_x, target_y=target_y)
 		enemy.spawn(x, y, speed_multiplier=speed_multiplier)
 		enemy.set_scale(self.sprite_scale)
+
 		self.active.append(enemy)
 
 	def _create_enemy(self) -> Enemy:
 		factories, weights = zip(*self.spawn_weights)
 		factory = random.choices(factories, weights=weights, k=1)[0]
+
 		return factory()
 
 	def _pick_spawn_position(self, enemy: Enemy, target_x: float, target_y: float) -> tuple[float, float]:
 		margin = max(enemy.width, enemy.height) + 24.0
+		side = random.choice(["top", "bottom", "left", "right"])
+
 		spawn_radius_x = min(max(280.0, self.world_bounds.width * 0.22), 780.0)
 		spawn_radius_y = min(max(220.0, self.world_bounds.height * 0.22), 520.0)
-		side = random.choice(["top", "bottom", "left", "right"])
+
 		target_x = max(self.world_bounds.left, min(target_x, self.world_bounds.right))
 		target_y = max(self.world_bounds.top, min(target_y, self.world_bounds.bottom))
 
@@ -769,6 +774,7 @@ class EnemyManager:
 
 		x = target_x + spawn_radius_x + margin
 		y = random.uniform(target_y - spawn_radius_y, target_y + spawn_radius_y)
+
 		return self._clamp_spawn_position(enemy, x, y)
 
 	def _clamp_spawn_position(self, enemy: Enemy, x: float, y: float) -> tuple[float, float]:
@@ -818,7 +824,7 @@ class EnemyManager:
 		dx = bx - ax
 		dy = by - ay
 
-		min_dist = enemy_a.radius + enemy_b.radius + 2.0
+		min_dist = enemy_a.radius + enemy_b.radius + 2.0		
 		dist_sq = dx * dx + dy * dy
 
 		if dist_sq <= 0.000001:
@@ -866,15 +872,11 @@ class EnemyManager:
 		min_y = float(self.world_bounds.top)
 		max_y = float(self.world_bounds.bottom - enemy.height)
 
-		if max_x < min_x:
-			enemy.x = self.world_bounds.centerx - enemy.width * 0.5
-		else:
-			enemy.x = max(min_x, min(enemy.x, max_x))
+		if max_x < min_x: enemy.x = self.world_bounds.centerx - enemy.width * 0.5
+		else: enemy.x = max(min_x, min(enemy.x, max_x))
 
-		if max_y < min_y:
-			enemy.y = self.world_bounds.centery - enemy.height * 0.5
-		else:
-			enemy.y = max(min_y, min(enemy.y, max_y))
+		if max_y < min_y: enemy.y = self.world_bounds.centery - enemy.height * 0.5
+		else: enemy.y = max(min_y, min(enemy.y, max_y))
 
 	def _resolve_enemy_static_collisions(self, enemy: Enemy) -> None:
 		if not self._static_colliders:
@@ -893,6 +895,7 @@ class EnemyManager:
 					continue
 
 				enemy.move_by(push_x, push_y)
+
 				center_x += push_x
 				center_y += push_y
 				resolved = True
@@ -916,8 +919,8 @@ class EnemyManager:
 			right_clearance = rect.right - center_x
 			top_clearance = center_y - rect.top
 			bottom_clearance = rect.bottom - center_y
-			min_clearance = min(left_clearance, right_clearance, top_clearance, bottom_clearance)
 
+			min_clearance = min(left_clearance, right_clearance, top_clearance, bottom_clearance)
 			if min_clearance == left_clearance:
 				target_x = rect.left - radius - 0.01
 				return (target_x - center_x, 0.0)
@@ -966,7 +969,7 @@ class EnemyManager:
 			speed=260.0,
 			damage=damage,
 			radius=self.arrow_radius,
-			life_left=3.0,
+			life_left=3.0
 		)
 		self.arrows.append(arrow)
 
@@ -998,14 +1001,12 @@ class EnemyManager:
 		for arrow in self.arrows:
 			arrow.update(dt)
 
-			if arrow.life_left <= 0.0:
-				continue
+			if arrow.life_left <= 0.0: continue
 
-			if not (self.world_bounds.left <= arrow.x <= self.world_bounds.right and self.world_bounds.top <= arrow.y <= self.world_bounds.bottom):
-				continue
+			if not (self.world_bounds.left <= arrow.x <= self.world_bounds.right 
+		   	   and self.world_bounds.top <= arrow.y <= self.world_bounds.bottom): continue
 
-			if self._intersects_static_colliders(arrow.x, arrow.y, arrow.radius):
-				continue
+			if self._intersects_static_colliders(arrow.x, arrow.y, arrow.radius): continue
 
 			dx = arrow.x - player_center[0]
 			dy = arrow.y - player_center[1]
