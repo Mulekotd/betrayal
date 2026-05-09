@@ -17,7 +17,8 @@ class EnemyAction(Enum):
 	ATTACK_1 = "ATTACK_1"
 	ATTACK_2 = "ATTACK_2"
 	ATTACK_3 = "ATTACK_3"
-	DEATH = "DEATH"
+	GUARD = "GUARD"
+	HIT = "HIT"
 
 
 class Enemy:
@@ -75,6 +76,9 @@ class Enemy:
 		self.freeze_timer = 0.0
 		self.ice_hits = 0
 
+		# HIT animation timer — blocks other state changes while > 0
+		self.hit_anim_time_left = 0.0
+
 		self.idle_action = "IDLE" if "IDLE" in actions else (actions[0] if actions else "")
 		self.walk_action = "WALK" if "WALK" in actions else self.idle_action
 		self.facing_dir = 1
@@ -94,6 +98,7 @@ class Enemy:
 		self.burn_timer = 0.0
 		self.freeze_timer = 0.0
 		self.ice_hits = 0
+		self.hit_anim_time_left = 0.0
 		self.set_scale(self.scale_multiplier)
 		self._set_state(EnemyAction.IDLE)
 
@@ -133,11 +138,15 @@ class Enemy:
 		self.animation.update(int(dt * 1000))
 
 		if self.health <= 0:
-			self._set_state(EnemyAction.DEATH)
 			return
 
 		if self.freeze_timer > 0.0:
 			self._set_state(EnemyAction.IDLE)
+			return
+
+		# Hold HIT animation until it finishes
+		if self.hit_anim_time_left > 0.0:
+			self._set_state(EnemyAction.HIT)
 			return
 
 		cx, cy = self.center
@@ -179,6 +188,14 @@ class Enemy:
 	def take_damage(self, amount: int) -> None:
 		reduced = int(amount * (1.0 - self.armor))
 		self.health -= max(1, reduced)
+		self._trigger_hit_animation()
+
+	def _trigger_hit_animation(self) -> None:
+		hit_frames = self.animation.frames.get("HIT", [])
+		if hit_frames:
+			hit_duration = max(0.08, self.animation.get_duration("HIT") / 1000.0)
+			self.hit_anim_time_left = hit_duration
+			self._set_state(EnemyAction.HIT)
 
 	def apply_burn(self, dps: float, duration: float) -> None:
 		self.burn_dps = max(self.burn_dps, dps)
@@ -212,6 +229,9 @@ class Enemy:
 
 		if self.freeze_timer > 0.0:
 			self.freeze_timer = max(0.0, self.freeze_timer - dt)
+
+		if self.hit_anim_time_left > 0.0:
+			self.hit_anim_time_left = max(0.0, self.hit_anim_time_left - dt)
 
 	def is_dead(self) -> bool:
 		return self.health <= 0
@@ -265,7 +285,7 @@ class Soldier(Enemy):
 			frame_width=0,
 			frame_height=0,
 			frame_gap=0,
-			actions=["IDLE", "WALK", "ATTACK_1", "ATTACK_2", "ATTACK_3", "DEATH"],
+			actions=["IDLE", "WALK", "ATTACK_1", "ATTACK_2", "ATTACK_3", "HIT"],
 			frame_rate=120,
 			base_health=base_health,
 			base_speed=base_speed,
@@ -316,6 +336,11 @@ class Soldier(Enemy):
 
 		if self.freeze_timer > 0.0:
 			self._set_state(EnemyAction.IDLE)
+			return
+
+		# HIT animation takes priority over everything except freeze
+		if self.hit_anim_time_left > 0.0:
+			self._set_state(EnemyAction.HIT)
 			return
 
 		cx, cy = self.center
@@ -452,7 +477,19 @@ class Soldier(Enemy):
 #   Damage: 15
 #   XP:     15
 #   Cooldown: 1.2 s  (slower swing than the Soldier)
+#
+# GUARD mechanic:
+#   After taking a hit, the Knight raises his guard for GUARD_DURATION seconds.
+#   While GUARD is active, incoming damage is further reduced by GUARD_DAMAGE_REDUCTION
+#   (multiplicative on top of base armor), so total reduction = 1 - (1-armor)*(1-guard_reduction).
+#   GUARD_COOLDOWN prevents the Knight from perma-blocking: he can only raise his
+#   guard again after the cooldown has elapsed since the last guard ended.
 # ---------------------------------------------------------------------------
+
+_GUARD_DURATION       = 1.0   # seconds the guard stays active
+_GUARD_DAMAGE_REDUCTION = 0.60  # 60% extra DR while guarding (stacks with armor)
+_GUARD_COOLDOWN       = 3.0   # seconds before the Knight can guard again
+
 class Knight(Enemy):
 	def __init__(
 		self,
@@ -467,7 +504,7 @@ class Knight(Enemy):
 			frame_width=0,
 			frame_height=0,
 			frame_gap=0,
-			actions=["IDLE", "WALK", "ATTACK_1", "ATTACK_2", "DEATH"],
+			actions=["IDLE", "WALK", "ATTACK_1", "ATTACK_2", "GUARD", "HIT"],
 			frame_rate=120,
 			base_health=base_health,
 			base_speed=base_speed,
@@ -486,11 +523,47 @@ class Knight(Enemy):
 		self.melee_attack_actions = ["ATTACK_1", "ATTACK_2"]
 		self.next_melee_attack_index = 0
 
+		# Guard state
+		self.guard_timer = 0.0       # time remaining in current guard
+		self.guard_cooldown_timer = 0.0  # cooldown before guard can trigger again
+
 	def spawn(self, x: float, y: float, speed_multiplier: float = 1.0) -> None:
 		super().spawn(x, y, speed_multiplier=speed_multiplier)
 		self.attack_timer = 0.0
 		self.current_attack_action = ""
 		self.attack_anim_time_left = 0.0
+		self.guard_timer = 0.0
+		self.guard_cooldown_timer = 0.0
+
+	# ------------------------------------------------------------------
+	# Public helpers
+	# ------------------------------------------------------------------
+
+	@property
+	def is_guarding(self) -> bool:
+		return self.guard_timer > 0.0
+
+	def take_damage(self, amount: int) -> None:
+		"""Apply damage, activating guard on first hit if not on cooldown."""
+		if self.is_guarding:
+			# Guard is already up — apply heavy damage reduction
+			effective = int(amount * (1.0 - self.armor) * (1.0 - _GUARD_DAMAGE_REDUCTION))
+			self.health -= max(1, effective)
+		else:
+			# Normal hit — standard armor reduction
+			reduced = int(amount * (1.0 - self.armor))
+			self.health -= max(1, reduced)
+
+			# Raise guard in response to the hit (if not on cooldown)
+			if self.guard_cooldown_timer <= 0.0:
+				self.guard_timer = _GUARD_DURATION
+				self.guard_cooldown_timer = _GUARD_DURATION + _GUARD_COOLDOWN
+
+		self._trigger_hit_animation()
+
+	# ------------------------------------------------------------------
+	# Update
+	# ------------------------------------------------------------------
 
 	def update_towards(
 		self,
@@ -507,8 +580,28 @@ class Knight(Enemy):
 		self.attack_timer = max(0.0, self.attack_timer - dt)
 		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
 
+		# Tick guard timers
+		if self.guard_timer > 0.0:
+			self.guard_timer = max(0.0, self.guard_timer - dt)
+		if self.guard_cooldown_timer > 0.0:
+			self.guard_cooldown_timer = max(0.0, self.guard_cooldown_timer - dt)
+
 		if self.freeze_timer > 0.0:
 			self._set_state(EnemyAction.IDLE)
+			return
+
+		# HIT animation — highest priority after freeze
+		if self.hit_anim_time_left > 0.0:
+			self._set_state(EnemyAction.HIT)
+			return
+
+		# GUARD animation — active while guard is up and not attacking/hit
+		if self.is_guarding and self.attack_anim_time_left <= 0.0:
+			self._set_state(EnemyAction.GUARD)
+			# Knight is stationary while guarding
+			cx, cy = self.center
+			dx = target_x - cx
+			self.facing_dir = -1 if dx < 0 else 1
 			return
 
 		cx, cy = self.center
@@ -540,7 +633,7 @@ class Knight(Enemy):
 				if callable(damage_fn):
 					damage_fn(self.damage)
 			else:
-					self._set_state(EnemyAction.IDLE)
+				self._set_state(EnemyAction.IDLE)
 			return
 
 		move_x = target_x if move_target_x is None else move_target_x
@@ -869,6 +962,7 @@ class EnemyManager:
 	def _clamp_enemy_to_world(self, enemy: Enemy) -> None:
 		min_x = float(self.world_bounds.left)
 		max_x = float(self.world_bounds.right - enemy.width)
+
 		min_y = float(self.world_bounds.top)
 		max_y = float(self.world_bounds.bottom - enemy.height)
 
@@ -1001,12 +1095,15 @@ class EnemyManager:
 		for arrow in self.arrows:
 			arrow.update(dt)
 
-			if arrow.life_left <= 0.0: continue
+			if arrow.life_left <= 0.0:
+				continue
 
 			if not (self.world_bounds.left <= arrow.x <= self.world_bounds.right 
-		   	   and self.world_bounds.top <= arrow.y <= self.world_bounds.bottom): continue
+		   	   and self.world_bounds.top <= arrow.y <= self.world_bounds.bottom):
+				continue
 
-			if self._intersects_static_colliders(arrow.x, arrow.y, arrow.radius): continue
+			if self._intersects_static_colliders(arrow.x, arrow.y, arrow.radius):
+				continue
 
 			dx = arrow.x - player_center[0]
 			dy = arrow.y - player_center[1]
@@ -1018,6 +1115,8 @@ class EnemyManager:
 				damage_fn = getattr(player, "take_damage", None)
 				if callable(damage_fn):
 					damage_fn(arrow.damage)
+
 				continue
+
 			survivors.append(arrow)
 		self.arrows = survivors
