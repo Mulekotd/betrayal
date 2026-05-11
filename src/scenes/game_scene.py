@@ -4,7 +4,6 @@ import math
 import random
 from typing import Any
 
-import pygame
 
 from src.engine.camera import Camera
 from src.engine.world import World
@@ -15,7 +14,7 @@ from src.system.input import Input
 from src.system.hud import HUD
 from src.utils.services import GameServices
 from src.utils.window import get_screen
-from src.utils.window import load_image, create_surface, draw_rect, blit_surface, set_mouse_visible, scale_surface
+from src.utils.window import load_image, create_surface, draw_rect, blit_surface, set_mouse_visible, scale_surface, draw_arc
 from src.utils.rect import Rect
 
 
@@ -92,7 +91,6 @@ class GameScene:
 
 		if level_up_icon_path.exists():
 			self.level_up_icon = load_image(str(level_up_icon_path), alpha=True)
-
 			if self.level_up_icon is not None:
 				self.level_up_icon = scale_surface(
 					self.level_up_icon,
@@ -355,7 +353,7 @@ class GameScene:
 			if alpha <= 0:
 				continue
 
-			center_angle = math.atan2(-slash.dir_y, slash.dir_x)
+			center_angle = math.atan2(slash.dir_y, slash.dir_x)
 			arc_rad = math.radians(slash.arc_deg)
 			start_angle = center_angle - arc_rad * 0.5
 			end_angle = center_angle + arc_rad * 0.5
@@ -364,14 +362,14 @@ class GameScene:
 			size = max(1, int(radius * 2 + pad * 2))
 
 			arc_surface = create_surface(size, size, alpha=True)
-			rect = pygame.Rect(pad, pad, int(radius * 2), int(radius * 2))
-			pygame.draw.arc(
-				arc_surface,
+			rect = (pad, pad, int(radius * 2), int(radius * 2))
+			draw_arc(
 				(*slash.color, alpha),
 				rect,
 				start_angle,
 				end_angle,
-				width=slash.line_width
+				width=slash.line_width,
+				target=arc_surface
 			)
 
 			blit_surface(

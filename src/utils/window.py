@@ -1,3 +1,5 @@
+import math
+
 from external.pplay.window import Window
 
 
@@ -54,8 +56,48 @@ def draw_line(color, start_pos, end_pos, width: int = 1, target=None):
     return get_window().draw_line(color, start_pos, end_pos, width=width, target=target)
 
 
+def draw_arc(color, rect, start_angle: float, end_angle: float, width: int = 1, target=None):
+    if hasattr(rect, "left") and hasattr(rect, "top") and hasattr(rect, "width") and hasattr(rect, "height"):
+        rect = (rect.left, rect.top, rect.width, rect.height)
+
+    x, y, w, h = rect
+    radius = max(1.0, min(w, h) * 0.5)
+    cx = x + w * 0.5
+    cy = y + h * 0.5
+
+    arc_span = end_angle - start_angle
+    steps = max(8, int(abs(arc_span) * radius * 0.12))
+
+    prev_x = cx + math.cos(start_angle) * radius
+    prev_y = cy + math.sin(start_angle) * radius
+
+    for step in range(1, steps + 1):
+        t = step / steps
+        angle = start_angle + arc_span * t
+
+        next_x = cx + math.cos(angle) * radius
+        next_y = cy + math.sin(angle) * radius
+
+        draw_line(color, (prev_x, prev_y), (next_x, next_y), width=width, target=target)
+
+        prev_x, prev_y = next_x, next_y
+
+
 def blit_surface(surface, pos, target=None):
     return get_window().blit_surface(surface, pos, target=target)
+
+
+def create_mask_surface(surface, setcolor, unsetcolor):
+    width = surface.get_width()
+    height = surface.get_height()
+    mask_surface = create_surface(width, height, alpha=True)
+
+    for y in range(height):
+        for x in range(width):
+            if surface.get_at((x, y))[3] > 0: mask_surface.set_at((x, y), setcolor)
+            else: mask_surface.set_at((x, y), unsetcolor)
+
+    return mask_surface
 
 
 def set_icon(icon_path):

@@ -7,3 +7,6 @@ venv/
 env/
 .venv/
 .env/
+
+# Zone.Identifier files
+*.py:Zone.Identifier

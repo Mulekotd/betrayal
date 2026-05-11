@@ -1,10 +1,8 @@
 from pathlib import Path
 from typing import Any, List, Tuple
 
-import pygame as _pygame
-
 from src.utils.rect import Rect
-from src.utils.window import load_image, scale_surface
+from src.utils.window import load_image, scale_surface, create_surface
 
 
 class Tile:
@@ -48,12 +46,21 @@ class TileSet:
         tile_height: int = 0,
         gap: int = 0,
         tile_scale: float = 1.0,
+        load_image_fn=load_image,
+        create_surface_fn=create_surface,
+        scale_surface_fn=scale_surface,
     ) -> None:
         path = Path(tileset_path)
         self.path = path
         self.tiles: List[Tile] = []
+        self._load_image = load_image_fn
+        self._create_surface = create_surface_fn
+        self._scale_surface = scale_surface_fn
 
-        full = load_image(str(path))
+        # ------------------------------------------------------------------ #
+        # Load atlas                                                         #
+        # ------------------------------------------------------------------ #
+        full = self._load_image(str(path))
         fw, fh = full.get_width(), full.get_height()
 
         # If tile size provided, slice as grid; otherwise auto-detect by alpha connected components
@@ -63,15 +70,18 @@ class TileSet:
             self._slice_by_alpha(full, fw, fh, gap, tile_scale)
 
     def _slice_grid(self, full: Any, fw: int, fh: int, tw: int, th: int, gap: int, scale: float) -> None:
+        # ------------------------------------------------------------------ #
+        # Fixed grid slicing                                                  #
+        # ------------------------------------------------------------------ #
         y = 0
 
         while y + th <= fh:
             x = 0
             while x + tw <= fw:
-                surf = _pygame.Surface((tw, th), flags=_pygame.SRCALPHA)
+                surf = self._create_surface(tw, th, alpha=True)
                 surf.blit(full, (0, 0), (x, y, tw, th))
                 if scale != 1.0:
-                    surf = scale_surface(surf, int(tw * scale), int(th * scale))
+                    surf = self._scale_surface(surf, int(tw * scale), int(th * scale))
                 self.tiles.append(Tile(surf))
                 if tw == fw:
                     break
@@ -82,6 +92,9 @@ class TileSet:
             y += th + gap
 
     def _slice_by_alpha(self, full: Any, fw: int, fh: int, gap: int, scale: float) -> None:
+        # ------------------------------------------------------------------ #
+        # Alpha-connected slicing                                             #
+        # ------------------------------------------------------------------ #
         visited = [[False] * fh for _ in range(fw)]
 
         def get_alpha(x: int, y: int) -> int:
@@ -130,11 +143,11 @@ class TileSet:
                     continue
 
                 # extract surface
-                surf = _pygame.Surface((bw, bh), flags=_pygame.SRCALPHA)
+                surf = self._create_surface(bw, bh, alpha=True)
                 surf.blit(full, (0, 0), (minx, miny, bw, bh))
 
                 if scale != 1.0:
-                    surf = scale_surface(surf, int(bw * scale), int(bh * scale))
+                    surf = self._scale_surface(surf, int(bw * scale), int(bh * scale))
 
                 self.tiles.append(Tile(surf))
 

@@ -3,12 +3,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Iterable
 
-import pygame
-
 from src.engine.animation import Animation
 from src.engine.state_machine import StateMachine
 from src.system.input import Input
-from src.utils.window import get_screen, draw_rect, blit_surface, scale_surface
+from src.utils.window import get_screen, draw_rect, blit_surface, scale_surface, create_mask_surface
 from src.utils.rect import Rect
 
 
@@ -119,7 +117,7 @@ class Player:
 		self.init_progression()
 
 	# ------------------------------------------------------------------ #
-	# Properties                                                           #
+	# Properties                                                         #
 	# ------------------------------------------------------------------ #
 
 	@property
@@ -432,8 +430,7 @@ class Player:
 
 		# White-mask flash while invulnerable (same logic as Enemy HIT tint)
 		if self.invuln_left > 0.0 and self._blink_on:
-			mask      = pygame.mask.from_surface(frame)
-			mask_surf = mask.to_surface(setcolor=(255, 255, 255, 120), unsetcolor=(0, 0, 0, 0))
+			mask_surf = create_mask_surface(frame, (255, 255, 255, 120), (0, 0, 0, 0))
 			blit_surface(mask_surf, (draw_x, draw_y), target=screen)
 
 		self._draw_health_bar(camera_x, camera_y)

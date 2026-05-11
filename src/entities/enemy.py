@@ -1,6 +1,5 @@
 import math
 import random
-import pygame
 from enum import Enum
 from pathlib import Path
 from typing import Callable
@@ -8,7 +7,7 @@ from typing import Callable
 from src.engine.animation import Animation
 from src.engine.state_machine import StateMachine
 from src.entities.weapon import Arrow
-from src.utils.window import get_screen, scale_surface, blit_surface
+from src.utils.window import get_screen, scale_surface, blit_surface, create_mask_surface
 from src.utils.rect import Rect
 
 
@@ -37,6 +36,9 @@ class Enemy:
 		xp_value: int = 6,
 		armor: float = 0.0
 	) -> None:
+		# ------------------------------------------------------------------ #
+		# Animation                                                          #
+		# ------------------------------------------------------------------ #
 		self.animation = Animation(
 			sprite_path = sprite_path,
 			width = frame_width,
@@ -52,6 +54,9 @@ class Enemy:
 		self.frame_width = self.animation.frame_width or frame_width
 		self.frame_height = self.animation.frame_height or frame_height
 
+		# ------------------------------------------------------------------ #
+		# Attributes                                                         #
+		# ------------------------------------------------------------------ #
 		self.base_health = base_health
 		self.base_speed = base_speed
 		self.base_damage = base_damage
@@ -70,6 +75,9 @@ class Enemy:
 		self.sprite_scale = self.base_scale * self.scale_multiplier
 		self.state_machine = StateMachine(list(EnemyAction), EnemyAction.IDLE)
 
+		# ------------------------------------------------------------------ #
+		# Status effects                                                     #
+		# ------------------------------------------------------------------ #
 		self.slow_factor = 1.0
 		self.slow_timer = 0.0
 		self.burn_dps = 0.0
@@ -247,19 +255,11 @@ class Enemy:
 		blit_surface(frame, (self.x - camera_x, self.y - camera_y), target=screen)
 
 		if self.hit_anim_time_left > 0.0:
-			mask = pygame.mask.from_surface(frame)
-			mask_surf = mask.to_surface(
-				setcolor=(255, 255, 255, 120),
-				unsetcolor=(0, 0, 0, 0)
-			)
+			mask_surf = create_mask_surface(frame, (255, 255, 255, 120), (0, 0, 0, 0))
 			blit_surface(mask_surf, (self.x - camera_x, self.y - camera_y), target=screen)
 
 		if self.freeze_timer > 0.0:
-			mask = pygame.mask.from_surface(frame)
-			mask_surf = mask.to_surface(
-				setcolor=(80, 160, 255, 120),
-				unsetcolor=(0, 0, 0, 0)
-			)
+			mask_surf = create_mask_surface(frame, (80, 160, 255, 120), (0, 0, 0, 0))
 			blit_surface(mask_surf, (self.x - camera_x, self.y - camera_y), target=screen)
 
 
