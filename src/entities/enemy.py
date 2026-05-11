@@ -1,5 +1,6 @@
 import math
 import random
+import pygame
 from enum import Enum
 from pathlib import Path
 from typing import Callable
@@ -8,17 +9,17 @@ from src.engine.animation import Animation
 from src.engine.state_machine import StateMachine
 from src.entities.weapon import Arrow
 from src.utils.window import get_screen, scale_surface, blit_surface
-from src.utils.box import Rect
+from src.utils.rect import Rect
 
 
 class EnemyAction(Enum):
-	IDLE = "IDLE"
-	WALK = "WALK"
+	IDLE     = "IDLE"
+	WALK     = "WALK"
 	ATTACK_1 = "ATTACK_1"
 	ATTACK_2 = "ATTACK_2"
 	ATTACK_3 = "ATTACK_3"
-	GUARD = "GUARD"
-	HIT = "HIT"
+	GUARD    = "GUARD"
+	HIT      = "HIT"
 
 
 class Enemy:
@@ -37,12 +38,12 @@ class Enemy:
 		armor: float = 0.0
 	) -> None:
 		self.animation = Animation(
-			sprite_path=sprite_path,
-			width=frame_width,
-			height=frame_height,
-			gap=frame_gap,
-			actions=actions,
-			frame_rate=frame_rate
+			sprite_path = sprite_path,
+			width = frame_width,
+			height = frame_height,
+			gap = frame_gap,
+			actions = actions,
+			frame_rate = frame_rate
 		)
 
 		self.x = 0.0
@@ -245,6 +246,22 @@ class Enemy:
 
 		blit_surface(frame, (self.x - camera_x, self.y - camera_y), target=screen)
 
+		if self.hit_anim_time_left > 0.0:
+			mask = pygame.mask.from_surface(frame)
+			mask_surf = mask.to_surface(
+				setcolor=(255, 255, 255, 120),
+				unsetcolor=(0, 0, 0, 0)
+			)
+			blit_surface(mask_surf, (self.x - camera_x, self.y - camera_y), target=screen)
+
+		if self.freeze_timer > 0.0:
+			mask = pygame.mask.from_surface(frame)
+			mask_surf = mask.to_surface(
+				setcolor=(80, 160, 255, 120),
+				unsetcolor=(0, 0, 0, 0)
+			)
+			blit_surface(mask_surf, (self.x - camera_x, self.y - camera_y), target=screen)
+
 
 # ---------------------------------------------------------------------------
 # Soldier (melee) — balanced stats
@@ -281,17 +298,17 @@ class Soldier(Enemy):
 		armor = 0.05 if is_ranged else 0.20
 
 		super().__init__(
-			sprite_path=sprite_path,
-			frame_width=0,
-			frame_height=0,
-			frame_gap=0,
-			actions=["IDLE", "WALK", "ATTACK_1", "ATTACK_2", "ATTACK_3", "HIT"],
-			frame_rate=120,
-			base_health=base_health,
-			base_speed=base_speed,
-			base_damage=base_damage,
-			xp_value=xp_value,
-			armor=armor
+			sprite_path = sprite_path,
+			frame_width = 0,
+			frame_height = 0,
+			frame_gap = 0,
+			actions = ["IDLE", "WALK", "ATTACK_1", "ATTACK_2", "ATTACK_3", "HIT"],
+			frame_rate = 120,
+			base_health = base_health,
+			base_speed = base_speed,
+			base_damage = base_damage,
+			xp_value = xp_value,
+			armor = armor
 		)
 
 		self.is_ranged = is_ranged
@@ -331,7 +348,7 @@ class Soldier(Enemy):
 		self._update_statuses(dt)
 		self.animation.update(int(dt * 1000))
 
-		self.attack_timer = max(0.0, self.attack_timer - dt)
+		self.attack_timer = max(0.0, self.attack_timer - dt * self.slow_factor)
 		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
 
 		if self.freeze_timer > 0.0:
@@ -349,12 +366,12 @@ class Soldier(Enemy):
 		self.facing_dir = -1 if dx < 0 else 1
 		dist_sq = dx * dx + dy * dy
 		self._try_release_ranged_shot(
-			origin_x=cx,
-			origin_y=cy,
-			target_dx=dx,
-			target_dy=dy,
-			spawn_projectile=spawn_projectile,
-			force=self.attack_anim_time_left <= 0.0
+			origin_x = cx,
+			origin_y = cy,
+			target_dx = dx,
+			target_dy = dy,
+			spawn_projectile = spawn_projectile,
+			force = self.attack_anim_time_left <= 0.0
 		)
 
 		if dist_sq <= 0.000001:
@@ -500,17 +517,17 @@ class Knight(Enemy):
 		xp_value: int = 15
 	) -> None:
 		super().__init__(
-			sprite_path=sprite_path,
-			frame_width=0,
-			frame_height=0,
-			frame_gap=0,
-			actions=["IDLE", "WALK", "ATTACK_1", "ATTACK_2", "GUARD", "HIT"],
-			frame_rate=120,
-			base_health=base_health,
-			base_speed=base_speed,
-			base_damage=base_damage,
-			xp_value=xp_value,
-			armor=0.35
+			sprite_path = sprite_path,
+			frame_width = 0,
+			frame_height = 0,
+			frame_gap = 0,
+			actions = ["IDLE", "WALK", "ATTACK_1", "ATTACK_2", "GUARD", "HIT"],
+			frame_rate = 120,
+			base_health = base_health,
+			base_speed = base_speed,
+			base_damage = base_damage,
+			xp_value = xp_value,
+			armor = 0.35
 		)
 		self.base_scale = 1.5
 		self.set_scale(1.0)
@@ -577,7 +594,7 @@ class Knight(Enemy):
 	) -> None:
 		self._update_statuses(dt)
 		self.animation.update(int(dt * 1000))
-		self.attack_timer = max(0.0, self.attack_timer - dt)
+		self.attack_timer = max(0.0, self.attack_timer - dt * self.slow_factor)
 		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
 
 		# Tick guard timers
@@ -792,6 +809,9 @@ class EnemyManager:
 
 	def get_enemies(self) -> list[Enemy]:
 		return self.active
+
+	def collect_dead(self) -> int:
+		return self._recycle_dead()
 
 	def set_static_colliders(self, colliders: list[object]) -> None:
 		self._static_colliders = [getattr(rect, 'copy')() if callable(getattr(rect, 'copy', None)) else rect for rect in colliders]

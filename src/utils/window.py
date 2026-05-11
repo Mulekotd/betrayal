@@ -40,6 +40,9 @@ def flip_surface(surface, flip_x: bool = False, flip_y: bool = False):
 
 
 def draw_rect(color, rect, width: int = 0, border_radius: int = 0, target=None):
+    if hasattr(rect, "left") and hasattr(rect, "top") and hasattr(rect, "width") and hasattr(rect, "height"):
+        rect = (rect.left, rect.top, rect.width, rect.height)
+
     return get_window().draw_rect(color, rect, width=width, border_radius=border_radius, target=target)
 
 

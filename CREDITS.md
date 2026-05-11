@@ -2,6 +2,5 @@
 
 ## Assets
 
-[Warren Clark](https://lionheart963.itch.io/)
-[SanctumPixel](https://sanctumpixel.itch.io/)
-[PixiVan](https://pixivan.itch.io/)
+[PixiVan](https://pixivan.itch.io/) # Knight
+[SventHole](https://sventhole.itch.io/) # Player

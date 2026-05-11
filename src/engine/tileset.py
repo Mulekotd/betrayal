@@ -3,7 +3,7 @@ from typing import Any, List, Tuple
 
 import pygame as _pygame
 
-from src.utils.box import Rect
+from src.utils.rect import Rect
 from src.utils.window import load_image, scale_surface
 
 

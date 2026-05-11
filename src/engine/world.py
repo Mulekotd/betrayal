@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from src.utils.box import Rect
+from src.utils.rect import Rect
 
 from src.engine.tileset import TileObject, TileSet
 
