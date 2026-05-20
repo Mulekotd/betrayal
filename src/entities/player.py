@@ -6,7 +6,7 @@ from typing import Iterable
 from src.engine.animation import Animation
 from src.engine.state_machine import StateMachine
 from src.system.input import Input
-from src.utils.window import get_screen, draw_rect, blit_surface, scale_surface, create_mask_surface
+from src.utils.window import get_screen, draw_rect, blit_surface, scale_surface, create_mask_surface, flip_surface
 from src.utils.rect import Rect
 
 
@@ -16,6 +16,7 @@ class PlayerAction(Enum):
 	HIT      = "HIT"
 	DEATH    = "DEATH"
 	GUARD    = "GUARD"
+	ROLL     = "ROLL"
 
 
 class Player:
@@ -33,9 +34,6 @@ class Player:
 	) -> None:
 		self.assets_dir = Path(assets_dir)
 
-		# ------------------------------------------------------------------ #
-		# Animation                                                            #
-		# ------------------------------------------------------------------ #
 		self.animation = Animation(
 			sprite_path = self.assets_dir / "player_spritesheet.png",
 			width=0,
@@ -47,7 +45,6 @@ class Player:
 
 		self.state_machine = StateMachine(list(PlayerAction), PlayerAction.IDLE)
 
-		# Cache frame dimensions coming from the spritesheet slicer
 		self.frame_width  = self.animation.frame_width
 		self.frame_height = self.animation.frame_height
 
@@ -55,15 +52,9 @@ class Player:
 		self.scale_multiplier = 1.0
 		self.sprite_scale = self.base_scale * self.scale_multiplier
 
-		# ------------------------------------------------------------------ #
-		# Position                                                             #
-		# ------------------------------------------------------------------ #
 		self.x = float(spawn_x)
 		self.y = float(spawn_y)
 
-		# ------------------------------------------------------------------ #
-		# Attributes                                                           #
-		# ------------------------------------------------------------------ #
 		self.attributes = {
 			"max_health":   max_health,
 			"health_regen": health_regen,
@@ -79,31 +70,21 @@ class Player:
 		self.max_health = self.attributes["max_health"]
 		self.health     = float(self.max_health)
 
-		# ------------------------------------------------------------------ #
-		# Invulnerability / blink                                              #
-		# ------------------------------------------------------------------ #
 		self.invuln_duration = 0.6
 		self.invuln_left     = 0.0
 		self.blink_interval  = 0.08
 		self._blink_timer    = 0.0
 		self._blink_on       = False
 
-		# ------------------------------------------------------------------ #
-		# Collision radius                                                     #
-		# ------------------------------------------------------------------ #
 		self.base_radius = max(10.0, min(self.frame_width, self.frame_height) * 0.45)
 		self.radius      = self.base_radius
 		self.set_scale(1.5)
 
-		# ------------------------------------------------------------------ #
-		# Misc                                                                 #
-		# ------------------------------------------------------------------ #
 		self.regen_timer = 0.0
 		self.facing      = (0.0, 1.0)
-		self.facing_dir  = 1               # 1 = right, -1 = left (mirrors sprite)
+		self.facing_dir  = 1
 		self.last_facing_dir = 1
 
-		# Attack / HIT / DEATH animation state
 		self.hit_anim_time_left    = 0.0
 		self.death_anim_time_left  = 0.0
 		self.attack_anim_time_left = 0.0
@@ -113,12 +94,21 @@ class Player:
 		self.guard_hold = False
 		self.death_hold = False
 
+		self.roll_duration    = 0.28
+		self.roll_speed       = 520.0
+		self.roll_cooldown    = 0.8
+		self.roll_time_left   = 0.0
+		self.roll_cooldown_left = 0.0
+		self.roll_dir_x       = 0.0
+		self.roll_dir_y       = 0.0
+		self._shift_was_down  = False
+		self.roll_visual_time = 0.0
+		self.damage_popups: list[tuple[int, float, float]] = []
+		self._draw_cache: dict[tuple[str, int, bool, int, int], object] = {}
+		self._mask_cache: dict[tuple[str, int, bool, int, int], object] = {}
+
 		self._sync_state_animation()
 		self.init_progression()
-
-	# ------------------------------------------------------------------ #
-	# Properties                                                         #
-	# ------------------------------------------------------------------ #
 
 	@property
 	def width(self) -> float:
@@ -143,9 +133,25 @@ class Player:
 	def is_dead(self) -> bool:
 		return self.health <= 0.0
 
-	# ------------------------------------------------------------------ #
-	# Animation helpers                                                  #
-	# ------------------------------------------------------------------ #
+	def is_rolling(self) -> bool:
+		return self.roll_time_left > 0.0
+
+	def _start_roll(self, dx: float, dy: float) -> None:
+		length = math.hypot(dx, dy)
+		if length > 0.0:
+			self.roll_dir_x = dx / length
+			self.roll_dir_y = dy / length
+		else:
+			self.roll_dir_x = float(self.facing_dir)
+			self.roll_dir_y = 0.0
+
+		self.roll_time_left     = self.roll_duration
+		self.roll_visual_time   = self.roll_duration
+		self.roll_cooldown_left = self.roll_cooldown
+		self.invuln_left  = self.roll_duration
+		self._blink_timer = 0.0
+		self._blink_on    = True
+		self._set_state(PlayerAction.ROLL)
 
 	def _sync_state_animation(self) -> None:
 		self.animation.play(self.state_machine.state.value)
@@ -215,10 +221,6 @@ class Player:
 		self.animation.current_index = max(0, len(frames) - 1)
 		self.animation.elapsed_ms = 0
 
-	# ------------------------------------------------------------------ #
-	# Update                                                               #
-	# ------------------------------------------------------------------ #
-
 	def update(
 		self,
 		input_manager: Input,
@@ -227,15 +229,13 @@ class Player:
 		world_height: int,
 		world_bounds: Rect | None = None
 	) -> None:
-		# Always tick animation
 		self.animation.update(int(dt * 1000))
 
-		# Tick timed animation states
 		self.hit_anim_time_left    = max(0.0, self.hit_anim_time_left    - dt)
 		self.death_anim_time_left  = max(0.0, self.death_anim_time_left  - dt)
 		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
+		self.roll_visual_time      = max(0.0, self.roll_visual_time      - dt)
 
-		# ---- DEATH: lock animation, no input ----
 		if self.is_dead():
 			if self.death_anim_time_left > 0.0 or self.state_machine.state != PlayerAction.DEATH:
 				self._set_state(PlayerAction.DEATH)
@@ -251,9 +251,35 @@ class Player:
 		keyboard = input_manager.keyboard
 		guard_pressed = keyboard.key_pressed("SPACE")
 
+		self.roll_time_left     = max(0.0, self.roll_time_left     - dt)
+		self.roll_cooldown_left = max(0.0, self.roll_cooldown_left - dt)
+
 		dx = 0.0
 		dy = 0.0
 		move_speed = self.attributes["move_speed"]
+
+		if self.is_rolling():
+			self.x += self.roll_dir_x * self.roll_speed * dt
+			self.y += self.roll_dir_y * self.roll_speed * dt
+			self._clamp_to_world(world_width, world_height, world_bounds)
+			self._update_invulnerability(dt)
+			self._set_state(PlayerAction.ROLL)
+			self._shift_was_down = keyboard.key_pressed("LSHIFT")
+			return
+
+		shift_now = keyboard.key_pressed("LSHIFT")
+		shift_just_pressed = shift_now and not self._shift_was_down
+		self._shift_was_down = shift_now
+
+		if shift_just_pressed and self.roll_cooldown_left <= 0.0 and not self.is_dead():
+			rdx = 0.0
+			rdy = 0.0
+			if keyboard.key_pressed("A") or keyboard.key_pressed("LEFT"):  rdx -= 1.0
+			if keyboard.key_pressed("D") or keyboard.key_pressed("RIGHT"): rdx += 1.0
+			if keyboard.key_pressed("W") or keyboard.key_pressed("UP"):    rdy -= 1.0
+			if keyboard.key_pressed("S") or keyboard.key_pressed("DOWN"):  rdy += 1.0
+			self._start_roll(rdx, rdy)
+			return
 
 		if not guard_pressed:
 			if keyboard.key_pressed("A") or keyboard.key_pressed("LEFT"):
@@ -299,7 +325,6 @@ class Player:
 			self.guard_anim_time_left = 0.0
 			self.guard_hold = False
 
-		# ---- Resolve animation state priority ----
 		if guard_pressed and guard_available:
 			self.hit_anim_time_left = 0.0
 			self._set_state(PlayerAction.GUARD)
@@ -307,23 +332,16 @@ class Player:
 				self._hold_guard_frame()
 			return
 
-		# HIT overrides everything while active
 		if self.hit_anim_time_left > 0.0:
 			self._set_state(PlayerAction.HIT)
 			return
 
-		# Attack animation holds until it finishes
 		if self.attack_anim_time_left > 0.0 and self.current_attack_action:
 			self._set_state(self._action_for_name(self.current_attack_action))
 			return
 
-		# Locomotion
 		if is_moving: self._set_state(PlayerAction.WALK)
 		else: self._set_state(PlayerAction.IDLE)
-
-	# ------------------------------------------------------------------ #
-	# World clamping                                                       #
-	# ------------------------------------------------------------------ #
 
 	def _clamp_to_world(
 		self,
@@ -342,10 +360,6 @@ class Player:
 
 		self.x = max(min_x, min(self.x, max_x)) if max_x >= min_x else min_x
 		self.y = max(min_y, min(self.y, max_y)) if max_y >= min_y else min_y
-
-	# ------------------------------------------------------------------ #
-	# Combat                                                               #
-	# ------------------------------------------------------------------ #
 
 	def resolve_enemy_collisions(self, enemies: Iterable[object]) -> None:
 		max_damage = 0
@@ -395,6 +409,8 @@ class Player:
 
 		reduced    = max(1, int(amount - self.attributes["defense"]))
 		self.health = max(0.0, self.health - reduced)
+		cx, cy = self.center
+		self.damage_popups.append((reduced, cx, cy - self.height * 0.35))
 
 		if self.is_dead():
 			self._trigger_death_animation()
@@ -407,33 +423,35 @@ class Player:
 
 		return True
 
-	# ------------------------------------------------------------------ #
-	# Draw                                                                 #
-	# ------------------------------------------------------------------ #
-
 	def draw(self, camera_x: float = 0.0, camera_y: float = 0.0) -> None:
 		screen = get_screen()
 
 		frame = self.animation.get_frame_flipped(flip_x=self.facing_dir < 0)
 		if frame is None:
-			return
+			frame = self._fallback_frame(self.facing_dir < 0)
+			if frame is None:
+				return
 
-		if self.sprite_scale != 1.0:
-			frame = scale_surface(frame, int(self.width), int(self.height))
+		frame = self._get_draw_frame(frame, self.facing_dir < 0)
 
 		draw_x = int(self.x - camera_x)
 		draw_y = int(self.y - camera_y)
 
-		# Normal draw (skip if blinking OFF during invuln)
+		if self.roll_visual_time > 0.0:
+			progress = 1.0 - (self.roll_visual_time / max(0.001, self.roll_duration))
+			for i in range(2, 0, -1):
+				offset = i * 14.0 * (1.0 - progress)
+				ghost_x = int(draw_x - self.roll_dir_x * offset)
+				ghost_y = int(draw_y - self.roll_dir_y * offset)
+				ghost = create_mask_surface(frame, (140, 210, 255, 35 + i * 25), (0, 0, 0, 0))
+				blit_surface(ghost, (ghost_x, ghost_y), target=screen)
+
 		if not self.invuln_left > 0.0 or self._blink_on:
 			blit_surface(frame, (draw_x, draw_y), target=screen)
 
-		# White-mask flash while invulnerable (same logic as Enemy HIT tint)
 		if self.invuln_left > 0.0 and self._blink_on:
-			mask_surf = create_mask_surface(frame, (255, 255, 255, 120), (0, 0, 0, 0))
+			mask_surf = self._get_mask_frame(frame, self.facing_dir < 0)
 			blit_surface(mask_surf, (draw_x, draw_y), target=screen)
-
-		self._draw_health_bar(camera_x, camera_y)
 
 	def _draw_health_bar(self, camera_x: float, camera_y: float) -> None:
 		screen     = get_screen()
@@ -448,6 +466,50 @@ class Player:
 		missing = int(bar_width * (1.0 - self.health / self.max_health)) if self.max_health > 0 else bar_width
 		if missing > 0:
 			draw_rect((0, 0, 0), (bar_x + bar_width - missing, bar_y, missing, bar_height), target=screen)
+
+	def _get_draw_frame(self, frame, flip_x: bool):
+		if self.sprite_scale == 1.0:
+			return frame
+
+		key = (
+			self.animation.current_action,
+			self.animation.current_index,
+			flip_x,
+			int(self.width),
+			int(self.height),
+		)
+		cached = self._draw_cache.get(key)
+		if cached is not None:
+			return cached
+
+		scaled = scale_surface(frame, int(self.width), int(self.height), smooth=False)
+		self._draw_cache[key] = scaled
+		return scaled
+
+	def _fallback_frame(self, flip_x: bool):
+		for action in ("WALK", "IDLE"):
+			frames = self.animation.frames.get(action, [])
+			if frames:
+				index = min(self.animation.current_index, len(frames) - 1)
+				frame = frames[index]
+				return flip_surface(frame, flip_x=True) if flip_x else frame
+		return None
+
+	def _get_mask_frame(self, frame, flip_x: bool):
+		key = (
+			self.animation.current_action,
+			self.animation.current_index,
+			flip_x,
+			int(self.width),
+			int(self.height),
+		)
+		cached = self._mask_cache.get(key)
+		if cached is not None:
+			return cached
+
+		mask = create_mask_surface(frame, (255, 255, 255, 120), (0, 0, 0, 0))
+		self._mask_cache[key] = mask
+		return mask
 
 	def _update_invulnerability(self, dt: float) -> None:
 		if self.invuln_left <= 0.0:
@@ -471,10 +533,6 @@ class Player:
 			self.regen_timer = 0.0
 			heal             = self.max_health * self.attributes["health_regen"]
 			self.health      = min(self.max_health, self.health + heal)
-
-	# ------------------------------------------------------------------ #
-	# Progression                                                          #
-	# ------------------------------------------------------------------ #
 
 	def init_progression(self) -> None:
 		self.level       = 1

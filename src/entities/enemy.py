@@ -36,9 +36,6 @@ class Enemy:
 		xp_value: int = 6,
 		armor: float = 0.0
 	) -> None:
-		# ------------------------------------------------------------------ #
-		# Animation                                                          #
-		# ------------------------------------------------------------------ #
 		self.animation = Animation(
 			sprite_path = sprite_path,
 			width = frame_width,
@@ -54,9 +51,6 @@ class Enemy:
 		self.frame_width = self.animation.frame_width or frame_width
 		self.frame_height = self.animation.frame_height or frame_height
 
-		# ------------------------------------------------------------------ #
-		# Attributes                                                         #
-		# ------------------------------------------------------------------ #
 		self.base_health = base_health
 		self.base_speed = base_speed
 		self.base_damage = base_damage
@@ -75,9 +69,6 @@ class Enemy:
 		self.sprite_scale = self.base_scale * self.scale_multiplier
 		self.state_machine = StateMachine(list(EnemyAction), EnemyAction.IDLE)
 
-		# ------------------------------------------------------------------ #
-		# Status effects                                                     #
-		# ------------------------------------------------------------------ #
 		self.slow_factor = 1.0
 		self.slow_timer = 0.0
 		self.burn_dps = 0.0
@@ -85,13 +76,15 @@ class Enemy:
 		self.freeze_timer = 0.0
 		self.ice_hits = 0
 
-		# HIT animation timer — blocks other state changes while > 0
 		self.hit_anim_time_left = 0.0
 
 		self.idle_action = "IDLE" if "IDLE" in actions else (actions[0] if actions else "")
 		self.walk_action = "WALK" if "WALK" in actions else self.idle_action
 		self.facing_dir = 1
 		self.contact_damage = True
+		self._draw_cache: dict[tuple[str, int, bool, int, int], object] = {}
+		self._hit_mask_cache: dict[tuple[str, int, bool, int, int], object] = {}
+		self._freeze_mask_cache: dict[tuple[str, int, bool, int, int], object] = {}
 		self._sync_state_animation()
 
 	def spawn(self, x: float, y: float, speed_multiplier: float = 1.0) -> None:
@@ -153,7 +146,6 @@ class Enemy:
 			self._set_state(EnemyAction.IDLE)
 			return
 
-		# Hold HIT animation until it finishes
 		if self.hit_anim_time_left > 0.0:
 			self._set_state(EnemyAction.HIT)
 			return
@@ -222,7 +214,6 @@ class Enemy:
 			self.freeze_timer = max(self.freeze_timer, freeze_duration)
 
 	def _update_statuses(self, dt: float) -> None:
-		# Armor does not reduce burn damage (fire bypasses armor).
 		if self.burn_timer > 0.0:
 			self.burn_timer = max(0.0, self.burn_timer - dt)
 			self.health -= self.burn_dps * dt
@@ -250,35 +241,53 @@ class Enemy:
 		frame = self.animation.get_frame_flipped(flip_x=self.facing_dir < 0)
 
 		if frame is None: return
-		if self.sprite_scale != 1.0: frame = scale_surface(frame, int(self.width), int(self.height))
+		frame = self._get_draw_frame(frame, self.facing_dir < 0)
 
 		blit_surface(frame, (self.x - camera_x, self.y - camera_y), target=screen)
 
 		if self.hit_anim_time_left > 0.0:
-			mask_surf = create_mask_surface(frame, (255, 255, 255, 120), (0, 0, 0, 0))
+			mask_surf = self._get_mask_frame(frame, self._hit_mask_cache, (255, 255, 255, 120))
 			blit_surface(mask_surf, (self.x - camera_x, self.y - camera_y), target=screen)
 
 		if self.freeze_timer > 0.0:
-			mask_surf = create_mask_surface(frame, (80, 160, 255, 120), (0, 0, 0, 0))
+			mask_surf = self._get_mask_frame(frame, self._freeze_mask_cache, (80, 160, 255, 120))
 			blit_surface(mask_surf, (self.x - camera_x, self.y - camera_y), target=screen)
 
+	def _get_draw_frame(self, frame, flip_x: bool):
+		if self.sprite_scale == 1.0:
+			return frame
 
-# ---------------------------------------------------------------------------
-# Soldier (melee) — balanced stats
-#   Melee: tankier than archer, slower, lower damage.
-#   Armor:  0.20  (20% damage reduction)
-#   HP:     60
-#   Speed:  120
-#   Damage: 8  (melee hit)
-#   XP:     8
-#
-# Archer (ranged Soldier) — glass-cannon stats
-#   Armor:  0.05  (5% damage reduction — almost none)
-#   HP:     35
-#   Speed:  145
-#   Damage: 22
-#   XP:     10
-# ---------------------------------------------------------------------------
+		key = (
+			self.animation.current_action,
+			self.animation.current_index,
+			flip_x,
+			int(self.width),
+			int(self.height),
+		)
+		cached = self._draw_cache.get(key)
+		if cached is not None:
+			return cached
+
+		scaled = scale_surface(frame, int(self.width), int(self.height), smooth=False)
+		self._draw_cache[key] = scaled
+		return scaled
+
+	def _get_mask_frame(self, frame, cache: dict, color: tuple[int, int, int, int]):
+		key = (
+			self.animation.current_action,
+			self.animation.current_index,
+			self.facing_dir < 0,
+			int(self.width),
+			int(self.height),
+		)
+		cached = cache.get(key)
+		if cached is not None:
+			return cached
+
+		mask = create_mask_surface(frame, color, (0, 0, 0, 0))
+		cache[key] = mask
+		return mask
+
 class Soldier(Enemy):
 	def __init__(
 		self,
@@ -355,7 +364,6 @@ class Soldier(Enemy):
 			self._set_state(EnemyAction.IDLE)
 			return
 
-		# HIT animation takes priority over everything except freeze
 		if self.hit_anim_time_left > 0.0:
 			self._set_state(EnemyAction.HIT)
 			return
@@ -485,27 +493,9 @@ class Soldier(Enemy):
 		self.attack_anim_time_left = min(action_duration, self.attack_cooldown)
 		self._set_state(self._action_for_name(action))
 
-
-# ---------------------------------------------------------------------------
-# Knight — heavy melee bruiser
-#   Armor:  0.35  (35% damage reduction — tankiest of the three)
-#   HP:     100
-#   Speed:  80  (slowest)
-#   Damage: 15
-#   XP:     15
-#   Cooldown: 1.2 s  (slower swing than the Soldier)
-#
-# GUARD mechanic:
-#   After taking a hit, the Knight raises his guard for GUARD_DURATION seconds.
-#   While GUARD is active, incoming damage is further reduced by GUARD_DAMAGE_REDUCTION
-#   (multiplicative on top of base armor), so total reduction = 1 - (1-armor)*(1-guard_reduction).
-#   GUARD_COOLDOWN prevents the Knight from perma-blocking: he can only raise his
-#   guard again after the cooldown has elapsed since the last guard ended.
-# ---------------------------------------------------------------------------
-
-_GUARD_DURATION       = 1.0   # seconds the guard stays active
-_GUARD_DAMAGE_REDUCTION = 0.60  # 60% extra DR while guarding (stacks with armor)
-_GUARD_COOLDOWN       = 3.0   # seconds before the Knight can guard again
+_GUARD_DURATION       = 1.0
+_GUARD_DAMAGE_REDUCTION = 0.60
+_GUARD_COOLDOWN       = 3.0
 
 class Knight(Enemy):
 	def __init__(
@@ -540,9 +530,8 @@ class Knight(Enemy):
 		self.melee_attack_actions = ["ATTACK_1", "ATTACK_2"]
 		self.next_melee_attack_index = 0
 
-		# Guard state
-		self.guard_timer = 0.0       # time remaining in current guard
-		self.guard_cooldown_timer = 0.0  # cooldown before guard can trigger again
+		self.guard_timer = 0.0
+		self.guard_cooldown_timer = 0.0
 
 	def spawn(self, x: float, y: float, speed_multiplier: float = 1.0) -> None:
 		super().spawn(x, y, speed_multiplier=speed_multiplier)
@@ -552,35 +541,23 @@ class Knight(Enemy):
 		self.guard_timer = 0.0
 		self.guard_cooldown_timer = 0.0
 
-	# ------------------------------------------------------------------
-	# Public helpers
-	# ------------------------------------------------------------------
-
 	@property
 	def is_guarding(self) -> bool:
 		return self.guard_timer > 0.0
 
 	def take_damage(self, amount: int) -> None:
-		"""Apply damage, activating guard on first hit if not on cooldown."""
 		if self.is_guarding:
-			# Guard is already up — apply heavy damage reduction
 			effective = int(amount * (1.0 - self.armor) * (1.0 - _GUARD_DAMAGE_REDUCTION))
 			self.health -= max(1, effective)
 		else:
-			# Normal hit — standard armor reduction
 			reduced = int(amount * (1.0 - self.armor))
 			self.health -= max(1, reduced)
 
-			# Raise guard in response to the hit (if not on cooldown)
 			if self.guard_cooldown_timer <= 0.0:
 				self.guard_timer = _GUARD_DURATION
 				self.guard_cooldown_timer = _GUARD_DURATION + _GUARD_COOLDOWN
 
 		self._trigger_hit_animation()
-
-	# ------------------------------------------------------------------
-	# Update
-	# ------------------------------------------------------------------
 
 	def update_towards(
 		self,
@@ -597,7 +574,6 @@ class Knight(Enemy):
 		self.attack_timer = max(0.0, self.attack_timer - dt * self.slow_factor)
 		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
 
-		# Tick guard timers
 		if self.guard_timer > 0.0:
 			self.guard_timer = max(0.0, self.guard_timer - dt)
 		if self.guard_cooldown_timer > 0.0:
@@ -607,15 +583,12 @@ class Knight(Enemy):
 			self._set_state(EnemyAction.IDLE)
 			return
 
-		# HIT animation — highest priority after freeze
 		if self.hit_anim_time_left > 0.0:
 			self._set_state(EnemyAction.HIT)
 			return
 
-		# GUARD animation — active while guard is up and not attacking/hit
 		if self.is_guarding and self.attack_anim_time_left <= 0.0:
 			self._set_state(EnemyAction.GUARD)
-			# Knight is stationary while guarding
 			cx, cy = self.center
 			dx = target_x - cx
 			self.facing_dir = -1 if dx < 0 else 1
@@ -684,8 +657,6 @@ class Knight(Enemy):
 
 
 class EnemyCluster:
-	"""Spatial hash grid to reduce neighbor checks for enemy separation."""
-
 	def __init__(self, cell_size: float = 96.0) -> None:
 		self.cell_size = max(32.0, cell_size)
 		self._cells: dict[tuple[int, int], list[Enemy]] = {}
@@ -721,7 +692,8 @@ class EnemyManager:
 		world_height: int,
 		base_spawn_rate: float = 0.12,
 		spawn_growth: float = 0.06,
-		max_spawn_rate: float = 2.0
+		max_spawn_rate: float = 1.35,
+		max_active_enemies: int = 90,
 	) -> None:
 		self.assets_dir = Path(assets_dir)
 		self.world_width = world_width
@@ -760,6 +732,8 @@ class EnemyManager:
 		self.base_spawn_rate = base_spawn_rate
 		self.spawn_growth = spawn_growth
 		self.max_spawn_rate = max_spawn_rate
+		self.max_active_enemies = max(20, int(max_active_enemies))
+		self._frame_index = 0
 		self.sprite_scale = 2.0
 		self.spawn_weights = [
 			(lambda: Soldier(self.soldier_sprite_path, is_ranged=False), 0.5),
@@ -768,6 +742,7 @@ class EnemyManager:
 		]
 
 	def update(self, player: object, dt: float) -> int:
+		self._frame_index += 1
 		self.elapsed_time += dt
 		target_x, target_y = getattr(player, "center", (self.world_width * 0.5, self.world_height * 0.5))
 		self._spawn_by_budget(dt, target_x=target_x, target_y=target_y)
@@ -784,16 +759,22 @@ class EnemyManager:
 			self._clamp_enemy_to_world(enemy)
 
 		self._update_arrows(player, dt)
-		self._resolve_enemy_collisions()
-
-		for enemy in self.active:
-			self._resolve_enemy_static_collisions(enemy)
-			self._clamp_enemy_to_world(enemy)
+		if len(self.active) <= 70 or self._frame_index % 2 == 0:
+			self._resolve_enemy_collisions()
 
 		return self._recycle_dead()
 
 	def draw(self, camera_x: float = 0.0, camera_y: float = 0.0) -> None:
+		screen = get_screen()
+		left = camera_x - 96
+		top = camera_y - 96
+		right = camera_x + screen.get_width() + 96
+		bottom = camera_y + screen.get_height() + 96
+
 		for arrow in self.arrows:
+			if arrow.x < left or arrow.x > right or arrow.y < top or arrow.y > bottom:
+				continue
+
 			arrow_surface = self._get_rotated_arrow_surface(arrow.angle_deg)
 			blit_surface(
 				arrow_surface,
@@ -801,10 +782,13 @@ class EnemyManager:
 					arrow.x - camera_x - arrow_surface.get_width() * 0.5,
 					arrow.y - camera_y - arrow_surface.get_height() * 0.5
 				),
-				target=get_screen()
+				target=screen
 			)
 
 		for enemy in self.active:
+			if enemy.x + enemy.width < left or enemy.x > right or enemy.y + enemy.height < top or enemy.y > bottom:
+				continue
+
 			enemy.draw(camera_x=camera_x, camera_y=camera_y)
 
 	def get_enemies(self) -> list[Enemy]:
@@ -831,13 +815,21 @@ class EnemyManager:
 			enemy.set_scale(self.sprite_scale)
 
 	def _spawn_by_budget(self, dt: float, target_x: float, target_y: float) -> None:
+		if len(self.active) >= self.max_active_enemies:
+			self.spawn_budget = min(self.spawn_budget, 1.0)
+			return
+
 		rate = self.current_spawn_rate()
 		self.spawn_budget += rate * dt
 
 		spawned_this_frame = 0
-		max_spawns_per_frame = 3
+		max_spawns_per_frame = 1
 
-		while self.spawn_budget >= 1.0 and spawned_this_frame < max_spawns_per_frame:
+		while (
+			self.spawn_budget >= 1.0
+			and spawned_this_frame < max_spawns_per_frame
+			and len(self.active) < self.max_active_enemies
+		):
 			self.spawn_budget -= 1.0
 			self._spawn_enemy(target_x=target_x, target_y=target_y)
 			spawned_this_frame += 1

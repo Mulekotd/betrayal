@@ -6,7 +6,7 @@ from external.pplay.gameimage import GameImage
 from src.game import Game
 from src.scenes.game_scene import GameScene
 from src.utils.services import GameServices
-from src.utils.window import get_screen, get_window
+from src.utils.window import get_screen, get_window, set_mouse_visible
 from src.utils.window import (
 	create_surface,
 	scale_surface,
@@ -49,7 +49,7 @@ class MenuScene:
 		self.logo.scale_y = self.logo_scale
 		self.logo_surface, self.logo_glow_surface = self._build_logo_layers()
 
-		self.menu_font = self.services.fonts.get(74)
+		self.menu_font = self.services.fonts.title(74)
 		self.menu_color = (120, 210, 235)
 		self.menu_hover_color = (170, 235, 255)
 		self.menu_shadow_color = (20, 60, 76)
@@ -76,7 +76,7 @@ class MenuScene:
 		cursor_y = start_y
 
 		for label, action in labels:
-			surface = self.menu_font.render(label, True, (255, 255, 255))
+			surface = self.menu_font.render(label, False, (255, 255, 255))
 
 			self.buttons.append(
 				MenuButton(
@@ -92,6 +92,7 @@ class MenuScene:
 			cursor_y += surface.get_height() + gap
 
 		self._hover_index: int | None = None
+		set_mouse_visible(True)
 
 	def handle_events(self, input_manager) -> None:
 		_ = input_manager
@@ -268,25 +269,27 @@ class MenuScene:
 			glow = self.menu_shadow_color
 			glow_color = self.menu_glow_color
 
-			glow_surface = self.menu_font.render(button.label, True, glow_color)
+			glow_surface = self.menu_font.render(button.label, False, glow_color)
 			for ox, oy in ((-2, 0), (2, 0), (0, -2), (0, 2)):
 				blit_surface(glow_surface, (draw_x + ox, draw_y + oy), target=target)
 
-			shadow_surface = self.menu_font.render(button.label, True, glow)
+			shadow_surface = self.menu_font.render(button.label, False, glow)
 			blit_surface(shadow_surface, (draw_x + 2, draw_y + 2), target=target)
 
-			text_surface = self.menu_font.render(button.label, True, color)
+			text_surface = self.menu_font.render(button.label, False, color)
 			blit_surface(text_surface, (draw_x, draw_y), target=target)
 
 	def _button_layer_offset(self) -> tuple[int, int]:
 		return (int(self._mx_norm * 6.0), int(self._my_norm * 4.0))
 
 	def _start_game(self) -> None:
+		set_mouse_visible(False)
 		self.game.set_scene(
 			GameScene(
 				services=self.services,
 				world_width=self.world_width,
-				world_height=self.world_height
+				world_height=self.world_height,
+				game=self.game,
 			)
 		)
 
