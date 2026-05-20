@@ -177,8 +177,10 @@ class Enemy:
 		self.animation.play(self.state_machine.state.value)
 
 	def _action_for_name(self, action: str) -> EnemyAction:
-		try: return EnemyAction(action)
-		except ValueError: return EnemyAction.IDLE
+		try:
+			return EnemyAction(action)
+		except ValueError:
+			return EnemyAction.IDLE
 
 	def _set_state(self, state: EnemyAction) -> None:
 		if self.state_machine.state != state:
@@ -262,14 +264,16 @@ class Enemy:
 			self.animation.current_index,
 			flip_x,
 			int(self.width),
-			int(self.height),
+			int(self.height)
 		)
+
 		cached = self._draw_cache.get(key)
 		if cached is not None:
 			return cached
 
 		scaled = scale_surface(frame, int(self.width), int(self.height), smooth=False)
 		self._draw_cache[key] = scaled
+
 		return scaled
 
 	def _get_mask_frame(self, frame, cache: dict, color: tuple[int, int, int, int]):
@@ -278,14 +282,16 @@ class Enemy:
 			self.animation.current_index,
 			self.facing_dir < 0,
 			int(self.width),
-			int(self.height),
+			int(self.height)
 		)
+
 		cached = cache.get(key)
 		if cached is not None:
 			return cached
 
 		mask = create_mask_surface(frame, color, (0, 0, 0, 0))
 		cache[key] = mask
+
 		return mask
 
 class Soldier(Enemy):
@@ -352,7 +358,7 @@ class Soldier(Enemy):
 		player: object | None = None,
 		spawn_projectile: Callable[[float, float, float, float, int], None] | None = None,
 		move_target_x: float | None = None,
-		move_target_y: float | None = None,
+		move_target_y: float | None = None
 	) -> None:
 		self._update_statuses(dt)
 		self.animation.update(int(dt * 1000))

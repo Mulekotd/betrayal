@@ -14,19 +14,22 @@ class Animation:
 		height: int,
 		gap: int,
 		actions: Iterable[str],
-		frame_rate: int = 120,
+		frame_rate: int = 120
 	) -> None:
 		self.sprite_path = Path(sprite_path)
+		self.sheet = load_image(str(self.sprite_path), alpha=True)
+
+		self.frame_rate = max(1, frame_rate)
 		self.frame_width = max(0, int(width))
 		self.frame_height = max(0, int(height))
+		self.frames: dict[str, list[Any]] = {}
+		
 		self.gap = max(0, int(gap))
-		self.actions = list(actions)
-		self.frame_rate = max(1, frame_rate)
-		self.alpha_threshold = 1
 		self.gap_tolerance = max(1, min(4, self.gap if self.gap > 0 else 1))
 
-		self.sheet = load_image(str(self.sprite_path), alpha=True)
-		self.frames: dict[str, list[Any]] = {}
+		self.actions = list(actions)
+		self.alpha_threshold = 1
+
 		self._flip_cache: dict[tuple[str, int, bool, bool], Any] = {}
 
 		if self.frame_width > 0 and self.frame_height > 0:
@@ -36,11 +39,6 @@ class Animation:
 
 		for action in self.actions:
 			self.frames.setdefault(action, [])
-
-		action_count = sum(1 for frames in self.frames.values() if frames)
-		total_frames = sum(len(frames) for frames in self.frames.values())
-
-		print(f"[Animation] {self.sprite_path.name}: actions={action_count} frames={total_frames}")
 
 		self.current_action = self.actions[0] if self.actions else ""
 		self.current_index = 0
@@ -56,19 +54,16 @@ class Animation:
 
 	def update(self, delta_ms: int) -> None:
 		frames = self.frames.get(self.current_action, [])
-
 		if not frames:
 			return
 
 		self.elapsed_ms += delta_ms
-
 		while self.elapsed_ms >= self.frame_rate:
 			self.elapsed_ms -= self.frame_rate
 			self.current_index = (self.current_index + 1) % len(frames)
 
 	def get_frame(self) -> Any | None:
 		frames = self.frames.get(self.current_action, [])
-
 		if not frames:
 			return None
 
@@ -76,7 +71,6 @@ class Animation:
 
 	def get_frame_flipped(self, flip_x: bool = False, flip_y: bool = False) -> Any | None:
 		frame = self.get_frame()
-
 		if frame is None:
 			return None
 
@@ -84,8 +78,8 @@ class Animation:
 			return frame
 
 		key = (self.current_action, self.current_index, flip_x, flip_y)
-		cached = self._flip_cache.get(key)
 
+		cached = self._flip_cache.get(key)
 		if cached is not None:
 			return cached
 
@@ -128,6 +122,7 @@ class Animation:
 
 				frame_width = col_end - col_start
 				frame_height = row_end - row_start
+
 				if frame_width <= 0 or frame_height <= 0:
 					continue
 
@@ -161,9 +156,9 @@ class Animation:
 			if row_index >= len(self.actions):
 				break
 
-			col_ranges = self._detect_col_ranges(row_start, row_end)
-
 			frames: list[Any] = []
+
+			col_ranges = self._detect_col_ranges(row_start, row_end)
 			for col_start, col_end in col_ranges:
 				frame_width = col_end - col_start
 				frame_height = row_end - row_start
@@ -214,8 +209,8 @@ class Animation:
 			global_start = probe_top + local_start
 			global_end = probe_top + local_end
 			center = (global_start + global_end) * 0.5
-			distance = abs(center - expected_center)
 
+			distance = abs(center - expected_center)
 			if distance < best_distance:
 				best_distance = distance
 				best_start = global_start
@@ -241,7 +236,6 @@ class Animation:
 		ranges: list[tuple[int, int]] = []
 		for x in range(0, max(1, sheet_width - self.frame_width + 1), step_x):
 			x_end = min(sheet_width, x + self.frame_width)
-
 			if x_end <= x:
 				continue
 
@@ -257,6 +251,7 @@ class Animation:
 		
 		start = None
 		gap_start = None
+
 		for idx, value in enumerate(mask):
 			if value and start is None:
 				start = idx
@@ -271,7 +266,6 @@ class Animation:
 					gap_start = None
 			elif value and start is not None and gap_start is not None:
 				gap_len = idx - gap_start
-
 				if gap_len > gap_tolerance:
 					ranges.append((start, gap_start))
 					start = idx
@@ -305,7 +299,6 @@ class Animation:
 
 	def _row_mask(self, top: int, bottom: int) -> list[bool]:
 		mask: list[bool] = []
-
 		for y in range(max(0, top), max(0, bottom)):
 			mask.append(self._row_has_pixels(y))
 
@@ -313,8 +306,8 @@ class Animation:
 
 	def _column_mask(self, row_start: int, row_end: int) -> list[bool]:
 		mask: list[bool] = []
-		sheet_width = self.sheet.get_width()
 
+		sheet_width = self.sheet.get_width()
 		for x in range(sheet_width):
 			mask.append(self._column_has_pixels(x, row_start, row_end))
 
@@ -322,7 +315,6 @@ class Animation:
 
 	def _row_has_pixels(self, y: int) -> bool:
 		width = self.sheet.get_width()
-
 		for x in range(width):
 			if self.sheet.get_at((x, y)).a > self.alpha_threshold:
 				return True

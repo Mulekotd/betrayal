@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Any
 
 
 from src.engine.camera import Camera
@@ -91,7 +90,7 @@ class GameScene:
 		)
 		self.pause_menu.set_actions(
 			resume=self._resume_game,
-			options=self._pause_options,
+			options=self._open_settings,
 			quit_game=self._quit_to_menu,
 		)
 
@@ -163,7 +162,7 @@ class GameScene:
 		if input_manager is None:
 			return
 
-		if self.pause_menu.active:
+		if self._is_game_paused():
 			self.pause_menu.update(input_manager)
 			return
 
@@ -212,8 +211,9 @@ class GameScene:
 			levels_gained = self.player.add_xp(xp_gained)
 
 			if levels_gained:
-				self.pending_level_ups += levels_gained
-				self._open_level_up()
+				if self._available_upgrade_attributes():
+					self.pending_level_ups += levels_gained
+					self._open_level_up()
 
 		player_center_x, player_center_y = self.player.center
 		self.camera.follow(player_center_x, player_center_y)
@@ -222,11 +222,12 @@ class GameScene:
 		if after_update < before_update:
 			self.total_kills += before_update - after_update
 
-	def render(self, window: Any) -> None:
+	def render(self) -> None:
 		self._draw_tiled_ground()
 		self.world.draw(camera_x=self.camera.x, camera_y=self.camera.y)
 
-		set_mouse_visible(self.level_up_active or self.pause_menu.active)
+		is_paused = self._is_game_paused()
+		set_mouse_visible(self.level_up_active or is_paused)
 
 		self.enemy_manager.draw(camera_x=self.camera.x, camera_y=self.camera.y)
 		self.player.draw(camera_x=self.camera.x, camera_y=self.camera.y)
@@ -234,13 +235,16 @@ class GameScene:
 		self.damage_numbers.draw(self.camera.x, self.camera.y)
 		self.hud.draw(self.player, self.total_kills, self.weapon_type, run_time=self.run_time)
 
-		if self.level_up_active:
+		if self.level_up_active and not is_paused:
 			self._draw_level_up_overlay()
 
 		if self.player_dead:
 			self._draw_game_over_overlay()
 
 		self.pause_menu.draw()
+
+	def _is_game_paused(self) -> bool:
+		return self.pause_menu.active
 
 	def _draw_tiled_ground(self) -> None:
 		screen = get_screen()
@@ -259,8 +263,21 @@ class GameScene:
 	def _resume_game(self) -> None:
 		self.pause_menu.close()
 
-	def _pause_options(self) -> None:
-		pass
+	def _open_settings(self) -> None:
+		from src.scenes.settings_scene import SettingsScene
+
+		if self.game is None:
+			return
+
+		self.game.set_scene(
+			SettingsScene(
+				game=self.game,
+				services=self.services,
+				world_width=self.viewport_width,
+				world_height=self.viewport_height,
+				on_back=lambda: self.game.set_scene(self),
+			)
+		)
 
 	def _quit_to_menu(self) -> None:
 		from src.scenes.menu_scene import MenuScene
@@ -591,7 +608,7 @@ class GameScene:
 		return (nx * overlap, ny * overlap)
 
 	def _open_level_up(self) -> None:
-		available = [name for name, level in self.player.attribute_levels.items() if level < self.player.max_attribute_level]
+		available = self._available_upgrade_attributes()
 
 		if not available:
 			self.pending_level_ups = 0
@@ -605,6 +622,13 @@ class GameScene:
 		self.level_up_hover   = None
 		self.level_up_active  = True
 		self.card_hover_t     = [0.0, 0.0, 0.0]
+
+	def _available_upgrade_attributes(self) -> list[str]:
+		return [
+			name
+			for name, level in self.player.attribute_levels.items()
+			if level < self.player.max_attribute_level
+		]
 
 	def _get_card_rects(self) -> list[Rect]:
 		card_w    = int(self.viewport_width  * 0.17)
@@ -767,7 +791,6 @@ class GameScene:
 					draw_circle(dot_border, (dx, dot_y), dot_r, width=1, target=screen)
 
 			if t > 0.3:
-				hint_alpha = int(255 * min(1.0, (t - 0.3) / 0.4))
 				hint_font  = self.services.fonts.get(18)
 				hint_surf  = hint_font.render("Click to choose", False, (220, 220, 180))
 				hint_s2 = create_surface(hint_surf.get_width(), hint_surf.get_height(), alpha=True)

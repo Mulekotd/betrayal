@@ -33,12 +33,6 @@ class Audio:
 	def get_volume(self) -> int:
 		return self._volume
 
-	def increase_volume(self, value: int = 5) -> None:
-		self.set_volume(self._volume + value)
-
-	def decrease_volume(self, value: int = 5) -> None:
-		self.set_volume(self._volume - value)
-
 	def load_sound(self, key: str, filepath: str) -> None:
 		if not self._ensure_audio_backend():
 			self._audio_available = False
@@ -54,20 +48,10 @@ class Audio:
 			return
 
 		sound = self._sounds.get(key)
-
 		if sound is None:
 			return
 
 		sound.play(-1 if repeat else 0)
-
-	def stop_sound(self, key: str) -> None:
-		if not self._audio_available:
-			return
-
-		sound = self._sounds.get(key)
-		
-		if sound is not None:
-			sound.stop()
 
 	def load_music(self, filepath: str, key: str = "music") -> None:
 		if not self._ensure_audio_backend():
@@ -85,76 +69,7 @@ class Audio:
 			return
 
 		music = self._music.get(self._music_key)
-
 		if music is None:
 			return
 
 		music.play(loops=-1 if repeat else 0)
-
-	def stop_music(self) -> None:
-		if not self._audio_available:
-			return
-
-		if self._music_key is None:
-			return
-
-		music = self._music.get(self._music_key)
-
-		if music is not None:
-			music.stop()
-
-	def pause_music(self) -> None:
-		if not self._audio_available:
-			return
-
-		if self._music_key is None:
-			return
-
-		music = self._music.get(self._music_key)
-
-		if music is not None:
-			music.pause()
-
-	def unpause_music(self) -> None:
-		if not self._audio_available:
-			return
-
-		if self._music_key is None:
-			return
-
-		music = self._music.get(self._music_key)
-
-		if music is not None:
-			music.unpause()
-
-	def is_playing(self, key: str | None = None) -> bool:
-		if not self._audio_available:
-			return False
-
-		if key is None:
-			if any(music.is_playing() for music in self._music.values()):
-				return True
-
-			for sound in self._sounds.values():
-				raw_sound = getattr(sound, "sound", None)
-				if raw_sound is not None and raw_sound.get_num_channels() > 0:
-					return True
-
-			return False
-
-		music = self._music.get(key)
-
-		if music is not None:
-			return music.is_playing()
-
-		sound = self._sounds.get(key)
-
-		if sound is None:
-			return False
-
-		raw_sound = getattr(sound, "sound", None)
-
-		if raw_sound is None:
-			return False
-
-		return raw_sound.get_num_channels() > 0

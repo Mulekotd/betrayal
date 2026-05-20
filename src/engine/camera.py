@@ -10,6 +10,3 @@ class Camera(PPlayCamera):
 	def follow(self, target_x: float, target_y: float) -> None:
 		self.x = target_x - self.viewport_width * 0.5
 		self.y = target_y - self.viewport_height * 0.5
-
-	def world_to_screen(self, world_x: float, world_y: float) -> tuple[float, float]:
-		return self.transform_x(world_x), self.transform_y(world_y)

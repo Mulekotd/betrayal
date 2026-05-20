@@ -6,7 +6,7 @@ from typing import Iterable
 from src.engine.animation import Animation
 from src.engine.state_machine import StateMachine
 from src.system.input import Input
-from src.utils.window import get_screen, draw_rect, blit_surface, scale_surface, create_mask_surface, flip_surface
+from src.utils.window import get_screen, blit_surface, scale_surface, create_mask_surface, flip_surface
 from src.utils.rect import Rect
 
 
@@ -453,20 +453,6 @@ class Player:
 			mask_surf = self._get_mask_frame(frame, self.facing_dir < 0)
 			blit_surface(mask_surf, (draw_x, draw_y), target=screen)
 
-	def _draw_health_bar(self, camera_x: float, camera_y: float) -> None:
-		screen     = get_screen()
-		bar_width  = int(self.width)
-		bar_height = 6
-		bar_gap    = 12
-		bar_x      = int(self.x - camera_x)
-		bar_y      = int(self.y - camera_y + self.height + bar_gap)
-
-		draw_rect((200, 0, 0), (bar_x, bar_y, bar_width, bar_height), target=screen)
-
-		missing = int(bar_width * (1.0 - self.health / self.max_health)) if self.max_health > 0 else bar_width
-		if missing > 0:
-			draw_rect((0, 0, 0), (bar_x + bar_width - missing, bar_y, missing, bar_height), target=screen)
-
 	def _get_draw_frame(self, frame, flip_x: bool):
 		if self.sprite_scale == 1.0:
 			return frame
@@ -577,7 +563,3 @@ class Player:
 			self.attributes[name] += 0.2
 
 		return True
-
-	def distance_to(self, target_x: float, target_y: float) -> float:
-		cx, cy = self.center
-		return math.hypot(target_x - cx, target_y - cy)

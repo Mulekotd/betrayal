@@ -1,25 +1,26 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
-import pygame
-
-from src.utils.rect     import Rect
+from src.utils.rect import Rect
 from src.utils.services import FontLibrary
-from src.utils.window   import (
+from src.utils.window import (
     blit_surface,
     draw_rect,
     get_screen,
     load_image,
-    scale_surface,
+    scale_surface
 )
 
-def _load(path: Path, w: int | None = None, h: int | None = None) -> pygame.Surface | None:
+def _load(path: Path, w: int | None = None, h: int | None = None) -> Any | None:
     if not path.exists():
         return None
+
     surf = load_image(str(path), alpha=True)
     if surf is None:
         return None
+
     if w is not None and h is not None:
         surf = scale_surface(surf, w, h, smooth=False)
     elif w is not None:
@@ -28,6 +29,7 @@ def _load(path: Path, w: int | None = None, h: int | None = None) -> pygame.Surf
     elif h is not None:
         ratio = h / surf.get_height()
         surf  = scale_surface(surf, int(surf.get_width() * ratio), h, smooth=False)
+
     return surf
 
 class HUDColors:
@@ -62,7 +64,7 @@ class HUD:
         viewport_height: int,
         fonts:           FontLibrary,
         images_dir:      Path,
-        padding:         int = 0,
+        padding:         int = 0
     ) -> None:
         self.viewport_width  = viewport_width
         self.viewport_height = viewport_height
@@ -85,12 +87,12 @@ class HUD:
         self.weapon_gap       = 8
 
         icon_inner = max(1, self.weapon_slot_size - self.weapon_icon_pad * 2)
-        self.weapon_icons: dict[str, pygame.Surface | None] = {
+        self.weapon_icons: dict[str, Any | None] = {
             key: _load(images_dir / fname, icon_inner, icon_inner)
             for key, fname in {
                 "fire": "fire_sword.png",
                 "ice":  "ice_sword.png",
-                "wind": "wind_sword.png",
+                "wind": "wind_sword.png"
             }.items()
         }
 
@@ -102,34 +104,38 @@ class HUD:
         player:          object,
         total_kills:     int,
         selected_weapon: str | None = None,
-        run_time:        float = 0.0,
+        run_time:        float = 0.0
     ) -> None:
         self._draw_hp_bar(player)
         self._draw_xp_bar(player)
         self._draw_weapon_bar(selected_weapon)
         self._draw_timer(run_time)
-        self._draw_kills_counter(total_kills, run_time)
+        self._draw_kills_counter(total_kills)
 
     def pick_weapon(self, x: float, y: float) -> str | None:
         for key, rect in self._weapon_rects().items():
             if rect.left <= x <= rect.right and rect.top <= y <= rect.bottom:
                 return key
+
         return None
 
     def _draw_hp_bar(self, player: object) -> None:
         screen = get_screen()
-        hp     = float(getattr(player, "health",     0))
+
+        hp = float(getattr(player, "health", 0))
         max_hp = float(getattr(player, "max_health", 1))
-        ratio  = min(1.0, max(0.0, hp / max(1.0, max_hp)))
+        ratio = min(1.0, max(0.0, hp / max(1.0, max_hp)))
 
         bx, by = self.hp_bar_x, self.hp_bar_y
         bw, bh = self.hp_bar_w, self.hp_bar_h
 
         draw_rect(HUDColors.HP_BG, (bx, by, bw, bh), target=screen)
+
         fill_w = max(0, int(bw * ratio))
         if fill_w > 0:
             fill_color = HUDColors.HP_FILL_LOW if ratio < 0.30 else HUDColors.HP_FILL
             draw_rect(fill_color, (bx, by, fill_w, bh), target=screen)
+
         draw_rect(HUDColors.HP_BORDER, (bx, by, bw, 1), target=screen)
         draw_rect(HUDColors.HP_BORDER, (bx, by + bh - 1, bw, 1), target=screen)
         draw_rect(HUDColors.HP_BORDER, (bx, by, 1, bh), target=screen)
@@ -141,33 +147,41 @@ class HUD:
 
     def _draw_xp_bar(self, player: object) -> None:
         screen = get_screen()
-        xp         = int(getattr(player, "xp",         0))
+
+        xp = int(getattr(player, "xp", 0))
         xp_to_next = max(1, int(getattr(player, "xp_to_next", 1)))
-        level      = int(getattr(player, "level",      1))
-        ratio      = min(1.0, max(0.0, xp / xp_to_next))
+        level = int(getattr(player, "level", 1))
+
+        ratio = min(1.0, max(0.0, xp / xp_to_next))
 
         bx, by = self.xp_bar_x, self.xp_bar_y
         bw, bh = self.viewport_width, self.xp_bar_h
 
         draw_rect(HUDColors.XP_BG, (bx, by, bw, bh), target=screen)
+
         fill_w = max(0, int(bw * ratio))
         if fill_w > 0:
             draw_rect(HUDColors.XP_FILL, (bx, by, fill_w, bh), target=screen)
+
         draw_rect(HUDColors.XP_BORDER, (bx, by, bw, 1), target=screen)
 
         label = f"LV {level}"
+
         surf  = self.font_xp.render(label, False, HUDColors.XP_TEXT)
         screen.blit(surf, ((bw - surf.get_width()) // 2, by + (bh - surf.get_height()) // 2))
 
-    def _draw_kills_counter(self, total_kills: int, run_time: float) -> None:
-        timer_label = self._timer_label(run_time)
-        tx, ty, _, th = self._timer_rect(timer_label)
+    def _draw_kills_counter(self, total_kills: int) -> None:
         label = f"Kills: {total_kills}"
+
         screen = get_screen()
+
         shadow = self.font_hud.render(label, False, HUDColors.TIMER_SHADOW)
         surf = self.font_hud.render(label, False, HUDColors.KILLS_TEXT)
-        screen.blit(shadow, (tx + 1, ty + th + 3))
-        screen.blit(surf, (tx, ty + th + 2))
+        x = self.hp_bar_x
+        y = self.hp_bar_y + self.hp_bar_h + 8
+
+        screen.blit(shadow, (x + 1, y + 1))
+        screen.blit(surf, (x, y))
 
     def _draw_timer(self, run_time: float) -> None:
         screen = get_screen()
@@ -180,7 +194,7 @@ class HUD:
         tx, ty, _, _ = self._timer_rect(label)
 
         screen.blit(shadow_surf, (tx + 1, ty + 1))
-        screen.blit(text_surf,   (tx,     ty))
+        screen.blit(text_surf, (tx, ty))
 
     def _draw_weapon_bar(self, selected_weapon: str | None) -> None:
         screen = get_screen()
@@ -204,35 +218,33 @@ class HUD:
                 )
                 blit_surface(icon, (ix, iy), target=screen)
 
-    def _draw_text(self, text: str, x: int, y: int, color: tuple, font) -> None:
-        screen = get_screen()
-        shadow = font.render(text, False, (0, 0, 0))
-        screen.blit(shadow, (x + 1, y + 1))
-        surf = font.render(text, False, color)
-        screen.blit(surf, (x, y))
-
     def _timer_label(self, run_time: float) -> str:
         minutes = int(run_time) // 60
         seconds = int(run_time) % 60
+
         return f"{minutes:02d}:{seconds:02d}"
 
     def _timer_rect(self, label: str) -> tuple[int, int, int, int]:
         surf = self.font_hud.render(label, False, HUDColors.TIMER_TEXT)
+
         tw = surf.get_width()
         th = surf.get_height()
-        x = self.padding + 8
-        y = (self.viewport_height - th * 2 - 2) // 2
+
+        x = (self.viewport_width - tw) // 2
+        y = self.padding + 8
+
         return (x, y, tw, th)
 
     def _weapon_rects(self) -> dict[str, Rect]:
         base_x = self.padding + 8
         base_y = self.xp_bar_y - self.weapon_gap - self.weapon_slot_size
+
         return {
             key: Rect(
                 base_x + i * (self.weapon_slot_size + self.weapon_gap),
                 base_y,
                 self.weapon_slot_size,
-                self.weapon_slot_size,
+                self.weapon_slot_size
             )
             for i, key in enumerate(self.weapon_order)
         }

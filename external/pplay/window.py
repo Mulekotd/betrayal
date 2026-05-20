@@ -83,6 +83,21 @@ class Window:
     def get_screen(cls):
         return cls.get_instance().screen
 
+    @classmethod
+    def get_display_size(cls):
+        if not pygame.get_init():
+            pygame.init()
+
+        info = pygame.display.Info()
+        return info.current_w, info.current_h
+
+    def set_native_size(self, width, height):
+        flags = pygame.DOUBLEBUF | pygame.HWSURFACE | pygame.RESIZABLE
+        self.real_screen = pygame.display.set_mode(
+            (max(1, int(width)), max(1, int(height))),
+            flags
+        )
+
     def update(self):
         """Finaliza o desenho e projeta na tela real com proteção contra crash."""
         largura_real, altura_real = self.real_screen.get_size()

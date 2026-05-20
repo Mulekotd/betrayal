@@ -33,7 +33,7 @@ class World:
 		images_dir: str | Path,
 		viewport_width: int,
 		viewport_height: int,
-		config: WorldConfig | None = None,
+		config: WorldConfig | None = None
 	) -> None:
 		self.images_dir = Path(images_dir)
 		self.config = config or WorldConfig()
@@ -47,7 +47,7 @@ class World:
 			self.config.margin,
 			self.config.margin,
 			max(1, self.width - self.config.margin * 2),
-			max(1, self.height - self.config.margin * 2),
+			max(1, self.height - self.config.margin * 2)
 		)
 
 		self.tree_tileset: TileSet | None = None
@@ -69,8 +69,9 @@ class World:
 			tile_width=0,
 			tile_height=0,
 			gap=0,
-			tile_scale=self.config.tree_tile_scale,
+			tile_scale=self.config.tree_tile_scale
 		)
+
 		self.objects = self._generate_tree_layout(player_center=player_center, player_radius=player_radius)
 		self.static_colliders = [obj.rect for obj in self.objects if obj.collidable]
 
@@ -93,7 +94,7 @@ class World:
 
 		target_count = max(
 			self.config.min_object_count,
-			int((placement_bounds.width * placement_bounds.height) / self.config.area_per_object),
+			int((placement_bounds.width * placement_bounds.height) / self.config.area_per_object)
 		)
 
 		bin_size = max(96, int(spacing * 0.76))
@@ -102,23 +103,25 @@ class World:
 			placement_bounds.left + spacing * 0.5,
 			placement_bounds.right,
 			spacing,
-			dtype=np.float32,
+			dtype=np.float32
 		)
+
 		y_coords = np.arange(
 			placement_bounds.top + spacing * 0.5,
 			placement_bounds.bottom,
 			spacing,
-			dtype=np.float32,
+			dtype=np.float32
 		)
 
 		if x_coords.size == 0:
 			x_coords = np.array([placement_bounds.centerx], dtype=np.float32)
+
 		if y_coords.size == 0:
 			y_coords = np.array([placement_bounds.centery], dtype=np.float32)
 
 		mesh_x, mesh_y = np.meshgrid(x_coords, y_coords)
-		candidate_points = np.column_stack((mesh_x.ravel(), mesh_y.ravel())).astype(np.float32)
 
+		candidate_points = np.column_stack((mesh_x.ravel(), mesh_y.ravel())).astype(np.float32)
 		if candidate_points.size == 0:
 			return []
 
@@ -129,7 +132,7 @@ class World:
 		extra_points = np.column_stack(
 			(
 				self._rng.uniform(placement_bounds.left, placement_bounds.right, size=extra_count),
-				self._rng.uniform(placement_bounds.top, placement_bounds.bottom, size=extra_count),
+				self._rng.uniform(placement_bounds.top, placement_bounds.bottom, size=extra_count)
 			)
 		).astype(np.float32)
 
@@ -147,11 +150,11 @@ class World:
 
 			x = float(point_x - tile.width * 0.5)
 			y = float(point_y - tile.height * 0.5)
+
 			x = max(float(placement_bounds.left), min(x, float(placement_bounds.right - tile.width)))
 			y = max(float(placement_bounds.top), min(y, float(placement_bounds.bottom - tile.height)))
 
 			obj = self.tree_tileset.create_object(tile_index, x, y, collidable=True)
-
 			if self._circle_intersects_rect(player_center[0], player_center[1], safe_radius, obj.rect):
 				continue
 
@@ -168,9 +171,10 @@ class World:
 		candidate: object,
 		occupied_bins: dict[tuple[int, int], list[object]],
 		bin_size: int,
-		min_gap: int,
+		min_gap: int
 	) -> bool:
 		probe = candidate.inflate(min_gap, min_gap)
+
 		left = int(math.floor(probe.left / bin_size))
 		right = int(math.floor(probe.right / bin_size))
 		top = int(math.floor(probe.top / bin_size))
@@ -188,7 +192,7 @@ class World:
 		self,
 		rect: object,
 		occupied_bins: dict[tuple[int, int], list[object]],
-		bin_size: int,
+		bin_size: int
 	) -> None:
 		left = int(math.floor(rect.left / bin_size))
 		right = int(math.floor(rect.right / bin_size))

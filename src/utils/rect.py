@@ -59,8 +59,3 @@ class Rect:
 
 	def colliderect(self, other: Rect) -> bool:
 		return Collision.collided(self, other)
-
-	def clamp_within(self, bounds: Rect) -> Rect:
-		left = max(bounds.left, min(self.left, bounds.right - self.width))
-		top = max(bounds.top, min(self.top, bounds.bottom - self.height))
-		return Rect(left, top, self.width, self.height)

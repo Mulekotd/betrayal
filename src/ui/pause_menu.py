@@ -63,6 +63,7 @@ class PauseMenu:
 
 		mouse = input_manager.mouse
 		mx, my = mouse.get_position()
+
 		self.hover_index = None
 		for index, button in enumerate(self.buttons):
 			if button.contains(mx, my):
@@ -76,6 +77,7 @@ class PauseMenu:
 			return
 
 		screen = get_screen()
+
 		blit_surface(self._overlay, (0, 0), target=screen)
 
 		title = self.title_font.render("PAUSADO", False, (245, 245, 235))
@@ -85,13 +87,15 @@ class PauseMenu:
 			hover = index == self.hover_index
 			fill = (44, 52, 62) if hover else (24, 30, 38)
 			border = (245, 210, 120) if hover else (100, 112, 124)
+
 			draw_rect(fill, (button.x, button.y, button.width, button.height), target=screen)
 			draw_rect(border, (button.x, button.y, button.width, button.height), width=2, target=screen)
+
 			text = self.button_font.render(button.label, False, (245, 245, 235))
 			screen.blit(
 				text,
 				(
 					button.x + (button.width - text.get_width()) // 2,
-					button.y + (button.height - text.get_height()) // 2,
+					button.y + (button.height - text.get_height()) // 2
 				),
 			)

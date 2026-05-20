@@ -35,6 +35,7 @@ class TileObject:
 
         draw_x = int(self.left - camera_x)
         draw_y = int(self.top - camera_y)
+
         blit_surface(self.tile.image, (draw_x, draw_y))
 
 
@@ -57,9 +58,6 @@ class TileSet:
         self._create_surface = create_surface_fn
         self._scale_surface = scale_surface_fn
 
-        # ------------------------------------------------------------------ #
-        # Load atlas                                                         #
-        # ------------------------------------------------------------------ #
         full = self._load_image(str(path))
         fw, fh = full.get_width(), full.get_height()
 
@@ -71,7 +69,7 @@ class TileSet:
 
     def _slice_grid(self, full: Any, fw: int, fh: int, tw: int, th: int, gap: int, scale: float) -> None:
         # ------------------------------------------------------------------ #
-        # Fixed grid slicing                                                  #
+        # Fixed grid slicing                                                 #
         # ------------------------------------------------------------------ #
         y = 0
 
@@ -80,12 +78,16 @@ class TileSet:
             while x + tw <= fw:
                 surf = self._create_surface(tw, th, alpha=True)
                 surf.blit(full, (0, 0), (x, y, tw, th))
+
                 if scale != 1.0:
                     surf = self._scale_surface(surf, int(tw * scale), int(th * scale))
+
                 self.tiles.append(Tile(surf))
                 if tw == fw:
                     break
+
                 x += tw + gap
+
             if th == fh:
                 break
 
@@ -106,6 +108,7 @@ class TileSet:
             for y in range(fh):
                 if visited[x][y]:
                     continue
+
                 if get_alpha(x, y) == 0:
                     visited[x][y] = True
                     continue
@@ -118,8 +121,10 @@ class TileSet:
                 while stack:
                     sx, sy = stack.pop()
                     a = get_alpha(sx, sy)
+
                     if a == 0:
                         continue
+
                     if sx < minx:
                         minx = sx
                     if sx > maxx:
@@ -131,8 +136,10 @@ class TileSet:
 
                     for dx, dy in neighbors:
                         nx, ny = sx + dx, sy + dy
+                        
                         if 0 <= nx < fw and 0 <= ny < fh and not visited[nx][ny]:
                             visited[nx][ny] = True
+
                             if get_alpha(nx, ny) != 0:
                                 stack.append((nx, ny))
 
@@ -142,7 +149,7 @@ class TileSet:
                 if bw < 4 and bh < 4:
                     continue
 
-                # extract surface
+                # Extract surface
                 surf = self._create_surface(bw, bh, alpha=True)
                 surf.blit(full, (0, 0), (minx, miny, bw, bh))
 

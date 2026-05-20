@@ -21,15 +21,8 @@ class StateMachine(Generic[TState]):
 	def state(self) -> TState:
 		return self._state
 
-	@property
-	def states(self) -> list[TState]:
-		return list(self._states)
-
 	def set(self, state: TState) -> None:
 		if state not in self._states:
 			raise ValueError("State not allowed for this state machine.")
 
 		self._state = state
-
-	def is_state(self, state: TState) -> bool:
-		return self._state == state

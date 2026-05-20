@@ -73,13 +73,6 @@ class Slash:
 		ratio = max(0.0, min(1.0, self.life_left / self.duration))
 		return int(220 * ratio)
 
-	def get_arc_angles(self) -> tuple[float, float]:
-		center_angle = math.atan2(self.dir_y, self.dir_x)
-		arc_rad = math.radians(self.arc_deg)
-		start_angle = center_angle - arc_rad * 0.5
-		end_angle = center_angle + arc_rad * 0.5
-		return (start_angle, end_angle)
-
 
 class Sword(Slash):
 	def __init__(

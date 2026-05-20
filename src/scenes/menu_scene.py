@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Callable
 
 from external.pplay.gameimage import GameImage
 
@@ -68,7 +68,7 @@ class MenuScene:
 
 		labels = [
 			("PLAY", self._start_game),
-			("OPTIONS", self._placeholder),
+			("OPTIONS", self._open_settings),
 			("QUIT", self._quit_game)
 		]
 
@@ -119,8 +119,7 @@ class MenuScene:
 					button.action()
 				break
 
-	def render(self, window: Any) -> None:
-		_ = window
+	def render(self) -> None:
 		screen = get_screen()
 		screen.blit(self.background_base_layer, (0, 0))
 		screen.blit(self.background_blur_layer, (0, 0))
@@ -135,11 +134,9 @@ class MenuScene:
 		logo_x += int(self._mx_norm * 10.0)
 		logo_y += int(self._my_norm * 8.0)
 
-		try:
+		if logo_x >= 0 and logo_y >= 0 and logo_x + logo_w <= self.world_width and logo_y + logo_h <= self.world_height:
 			region = self.background_base_layer.subsurface((logo_x, logo_y, logo_w, logo_h)).copy()
 			blit_surface(region, (logo_x, logo_y), target=screen)
-		except Exception:
-			pass
 
 		screen.blit(self.background_depth_layer, (0, 0))
 
@@ -293,8 +290,28 @@ class MenuScene:
 			)
 		)
 
+	def _open_settings(self) -> None:
+		from src.scenes.settings_scene import SettingsScene
+
+		self.game.set_scene(
+			SettingsScene(
+				game=self.game,
+				services=self.services,
+				world_width=self.world_width,
+				world_height=self.world_height,
+				on_back=self._return_to_menu,
+			)
+		)
+
+	def _return_to_menu(self) -> None:
+		self.game.set_scene(
+			MenuScene(
+				game=self.game,
+				services=self.services,
+				world_width=self.world_width,
+				world_height=self.world_height,
+			)
+		)
+
 	def _quit_game(self) -> None:
 		get_window().close()
-
-	def _placeholder(self) -> None:
-		pass

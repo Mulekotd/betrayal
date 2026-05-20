@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
 from external.pplay.window import Window
 
@@ -17,7 +17,7 @@ class SceneContract(Protocol):
     def update(self, dt: float, input_manager: Input | None) -> None:
         ...
 
-    def render(self, window: Any) -> None:
+    def render(self) -> None:
         ...
 
 
@@ -28,7 +28,7 @@ class Game:
         height: int,
         title: str,
         fps: int,
-        background_color: tuple[int, int, int] = (15, 20, 30),
+        background_color: tuple[int, int, int] = (15, 20, 30)
     ) -> None:
         self.width = width
         self.height = height
@@ -36,7 +36,7 @@ class Game:
         self.fps = fps
         self.background_color = background_color
 
-        self.window: Any | None = None
+        self.window: Window | None = None
 
         self.input: Input | None = None
         self.audio: Audio | None = None
@@ -50,17 +50,13 @@ class Game:
         self.window.set_background_color(list(self.background_color))
 
         if native_width and native_height:
-            import pygame
-            pygame.display.set_mode(
-                (native_width, native_height),
-                pygame.DOUBLEBUF | pygame.HWSURFACE | pygame.RESIZABLE
-            )
-            self.window.real_screen = pygame.display.get_surface()
+            self.window.set_native_size(native_width, native_height)
 
         assets_dir = Path(__file__).resolve().parent / "assets"
         images_dir = assets_dir / "images"
         fonts_dir = assets_dir / "fonts"
         font_path = fonts_dir / "Kenney Mini.ttf"
+
         if not font_path.exists():
             font_path = fonts_dir / "Monogram.ttf"
 
@@ -68,7 +64,7 @@ class Game:
             assets_dir=assets_dir,
             images_dir=images_dir,
             fonts_dir=fonts_dir,
-            font_path=font_path,
+            font_path=font_path
         )
 
         self.audio = Audio()
@@ -81,8 +77,8 @@ class Game:
 
         if theme_path.exists():
             theme_key = "theme"
-            self.audio.load_sound(theme_key, str(theme_path))
 
+            self.audio.load_sound(theme_key, str(theme_path))
             if theme_key in self.audio._sounds:
                 self.audio.play_sound(theme_key, repeat=True)
             else:
@@ -90,10 +86,8 @@ class Game:
                 self.audio.play_music(repeat=True)
 
         self.input = Input()
-        window_cls: Any = Window
-
-        self.input.keyboard = window_cls.get_keyboard()
-        self.input.mouse = window_cls.get_mouse()
+        self.input.keyboard = self.window.keyboard
+        self.input.mouse = self.window.mouse
 
     def set_scene(self, scene: SceneContract) -> None:
         self.current_scene = scene
@@ -117,9 +111,8 @@ class Game:
             return
 
         self.window.set_background_color(list(self.background_color))
-
         if self.current_scene is not None:
-            self.current_scene.render(self.window)
+            self.current_scene.render()
 
         self.window.update()
 
@@ -128,7 +121,6 @@ class Game:
             self.initialize()
 
         self.running = True
-
         while self.running:
             if self.window is None:
                 break
