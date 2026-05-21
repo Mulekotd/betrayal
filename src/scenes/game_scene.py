@@ -65,6 +65,7 @@ class GameScene:
 			world_width=self.world_width,
 			world_height=self.world_height
 		)
+
 		self.enemy_manager.set_world_bounds(self.world.bounds)
 		self.world.rebuild(player_center=self.player.center, player_radius=self.player.radius)
 		self.enemy_manager.set_static_colliders(self.world.static_colliders)
@@ -82,16 +83,18 @@ class GameScene:
 		self.ui_font_medium = self.services.fonts.mini(28)
 		self.ui_font_title = self.services.fonts.title(42)
 		self.damage_numbers = DamageNumbers(self.services.fonts.mini(24))
+
 		self.pause_menu = PauseMenu(
 			self.viewport_width,
 			self.viewport_height,
 			self.services.fonts.title(56),
-			self.services.fonts.mini(30),
+			self.services.fonts.mini(30)
 		)
+
 		self.pause_menu.set_actions(
 			resume=self._resume_game,
 			options=self._open_settings,
-			quit_game=self._quit_to_menu,
+			quit_game=self._quit_to_menu
 		)
 
 		self.hud = HUD(
@@ -123,8 +126,9 @@ class GameScene:
 			"health_regen": "regenvida.png",
 			"move_speed":   "movespeed.png",
 			"attack_speed": "attackspeed.png",
-			"strength":     "strength.png",
+			"strength":     "strength.png"
 		}
+
 		for attribute, filename in upgrade_icon_files.items():
 			icon_path = upgrade_dir / filename
 			if icon_path.exists():
@@ -182,6 +186,7 @@ class GameScene:
 			self.world_height,
 			world_bounds=self.world.bounds
 		)
+
 		self.run_time += dt
 		self._resolve_player_static_collisions()
 		self._handle_weapon_selection(input_manager)
@@ -209,7 +214,6 @@ class GameScene:
 
 		if xp_gained:
 			levels_gained = self.player.add_xp(xp_gained)
-
 			if levels_gained:
 				if self._available_upgrade_attributes():
 					self.pending_level_ups += levels_gained
@@ -275,7 +279,7 @@ class GameScene:
 				services=self.services,
 				world_width=self.viewport_width,
 				world_height=self.viewport_height,
-				on_back=lambda: self.game.set_scene(self),
+				on_back=lambda: self.game.set_scene(self)
 			)
 		)
 
@@ -291,7 +295,7 @@ class GameScene:
 				game=self.game,
 				services=self.services,
 				world_width=self.viewport_width,
-				world_height=self.viewport_height,
+				world_height=self.viewport_height
 			)
 		)
 
@@ -308,7 +312,7 @@ class GameScene:
 		self.enemy_manager = EnemyManager(
 			assets_dir=assets_dir,
 			world_width=self.world_width,
-			world_height=self.world_height,
+			world_height=self.world_height
 		)
 		self.enemy_manager.set_world_bounds(self.world.bounds)
 		self.world.rebuild(player_center=self.player.center, player_radius=self.player.radius)
@@ -531,7 +535,6 @@ class GameScene:
 
 			for rect in self.world.static_colliders:
 				push_x, push_y = self._circle_rect_push(center_x, center_y, radius, rect)
-
 				if push_x == 0.0 and push_y == 0.0:
 					continue
 
@@ -584,9 +587,9 @@ class GameScene:
 			return (0.0, 0.0)
 
 		if dist_sq <= 0.000001:
-			left_clearance   = center_x - rect.left
-			right_clearance  = rect.right  - center_x
-			top_clearance    = center_y - rect.top
+			left_clearance = center_x - rect.left
+			right_clearance = rect.right  - center_x
+			top_clearance = center_y - rect.top
 			bottom_clearance = rect.bottom - center_y
 
 			min_clearance = min(left_clearance, right_clearance, top_clearance, bottom_clearance)
@@ -600,10 +603,11 @@ class GameScene:
 
 			return (0.0, rect.bottom + radius + 0.01 - center_y)
 
-		dist    = max(0.000001, math.sqrt(dist_sq))
+		dist = max(0.000001, math.sqrt(dist_sq))
 		overlap = radius - dist + 0.01
-		nx      = dx / dist
-		ny      = dy / dist
+
+		nx = dx / dist
+		ny = dy / dist
 
 		return (nx * overlap, ny * overlap)
 
@@ -619,9 +623,9 @@ class GameScene:
 		random.shuffle(available)
 
 		self.level_up_options = available[:3]
-		self.level_up_hover   = None
-		self.level_up_active  = True
-		self.card_hover_t     = [0.0, 0.0, 0.0]
+		self.level_up_hover = None
+		self.level_up_active = True
+		self.card_hover_t = [0.0, 0.0, 0.0]
 
 	def _available_upgrade_attributes(self) -> list[str]:
 		return [
@@ -631,31 +635,34 @@ class GameScene:
 		]
 
 	def _get_card_rects(self) -> list[Rect]:
-		card_w    = int(self.viewport_width  * 0.17)
-		card_h    = int(self.viewport_height * 0.52)
-		gap       = int(self.viewport_width  * 0.03)
-		n         = len(self.level_up_options)
-		total_w   = n * card_w + (n - 1) * gap
-		start_x   = (self.viewport_width  - total_w) // 2
-		center_y  = self.viewport_height // 2
+		card_w = int(self.viewport_width  * 0.17)
+		card_h = int(self.viewport_height * 0.52)
+		gap = int(self.viewport_width  * 0.03)
+
+		n = len(self.level_up_options)
+
+		total_w = n * card_w + (n - 1) * gap
+		start_x = (self.viewport_width  - total_w) // 2
+		center_y = self.viewport_height // 2
 
 		rects: list[Rect] = []
 		for i in range(n):
 			x = start_x + i * (card_w + gap)
 			y = center_y - card_h // 2
 			rects.append(Rect(x, y, card_w, card_h))
+
 		return rects
 
 	def _get_scaled_card_rect(self, base: Rect, t: float) -> Rect:
-		scale  = 1.0 + 0.08 * t
-		new_w  = int(base.width  * scale)
-		new_h  = int(base.height * scale)
-		new_x  = base.centerx - new_w // 2
-		new_y  = base.centery - new_h // 2
+		scale = 1.0 + 0.08 * t
+		new_w = int(base.width  * scale)
+		new_h = int(base.height * scale)
+		new_x = base.centerx - new_w // 2
+		new_y = base.centery - new_h // 2
 		return Rect(new_x, new_y, new_w, new_h)
 
 	def _update_level_up(self, input_manager: Input) -> None:
-		mouse  = input_manager.mouse
+		mouse = input_manager.mouse
 		mx, my = mouse.get_position()
 		base_rects = self._get_card_rects()
 
@@ -681,15 +688,15 @@ class GameScene:
 					if self.pending_level_ups > 0:
 						self._open_level_up()
 					else:
-						self.level_up_active  = False
+						self.level_up_active = False
 						self.level_up_options = []
-						self.level_up_hover   = None
+						self.level_up_hover = None
 					return
 			else:
 				self.card_hover_t[index] = max(0.0, self.card_hover_t[index] - self.CARD_ANIM_SPEED * dt_approx)
 
 	def _draw_level_up_overlay(self) -> None:
-		screen     = get_screen()
+		screen = get_screen()
 		base_rects = self._get_card_rects()
 
 		label_map = {
@@ -707,7 +714,7 @@ class GameScene:
 			"defense":      self.level_up_icon,
 			"strength":     self.level_up_icons.get("strength", self.level_up_icon),
 			"move_speed":   self.level_up_icons.get("move_speed", self.level_up_icon),
-			"attack_speed": self.level_up_icons.get("attack_speed", self.level_up_icon),
+			"attack_speed": self.level_up_icons.get("attack_speed", self.level_up_icon)
 		}
 
 		color_map = {
@@ -716,7 +723,7 @@ class GameScene:
 			"defense":      ((60,  80,  160), (100, 140, 255)),
 			"strength":     ((160, 80,  40),  (255, 150,  80)),
 			"move_speed":   ((80,  160, 160), (120, 230, 230)),
-			"attack_speed": ((130, 60,  160), (200, 100, 255)),
+			"attack_speed": ((130, 60,  160), (200, 100, 255))
 		}
 
 		overlay = create_surface(self.viewport_width, self.viewport_height, alpha=True)
@@ -729,8 +736,8 @@ class GameScene:
 		screen.blit(title_surf, (tx, ty))
 
 		for index, base in enumerate(base_rects):
-			t        = self.card_hover_t[index] if index < len(self.card_hover_t) else 0.0
-			rect     = self._get_scaled_card_rect(base, t)
+			t = self.card_hover_t[index] if index < len(self.card_hover_t) else 0.0
+			rect = self._get_scaled_card_rect(base, t)
 			attribute = self.level_up_options[index]
 
 			dark_col, light_col = color_map.get(attribute, ((80, 80, 100), (150, 150, 200)))
@@ -738,23 +745,23 @@ class GameScene:
 			def lerp_color(c1, c2, t):
 				return tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3))
 
-			bg_color     = lerp_color((30, 28, 45), dark_col, t * 0.55)
+			bg_color = lerp_color((30, 28, 45), dark_col, t * 0.55)
 			border_color = lerp_color((100, 90, 70), light_col, t)
-			border_w     = 2 if t < 0.5 else 3
+			border_w = 2 if t < 0.5 else 3
 
 			shadow_surf = create_surface(rect.width + 8, rect.height + 8, alpha=True)
 			shadow_alpha = int(80 + 60 * t)
 			shadow_surf.fill((0, 0, 0, shadow_alpha))
-			blit_surface(shadow_surf, (rect.x - 4, rect.y + 6), target=screen)
 
+			blit_surface(shadow_surf, (rect.x - 4, rect.y + 6), target=screen)
 			draw_rect(bg_color, rect, border_radius=12, target=screen)
 
 			glow_h = rect.height // 3
 			glow_alpha = int(30 + 50 * t)
 			glow_surf = create_surface(rect.width - 4, glow_h, alpha=True)
 			glow_surf.fill((*light_col, glow_alpha))
-			blit_surface(glow_surf, (rect.x + 2, rect.y + 2), target=screen)
 
+			blit_surface(glow_surf, (rect.x + 2, rect.y + 2), target=screen)
 			draw_rect(border_color, rect, width=border_w, border_radius=12, target=screen)
 
 			icon = icon_map.get(attribute)
@@ -766,36 +773,45 @@ class GameScene:
 				icon_x = rect.centerx - icon_size // 2
 				screen.blit(scaled_icon, (icon_x, icon_y_base))
 
-			label      = label_map.get(attribute, attribute)
+			label = label_map.get(attribute, attribute)
 			label_surf = self.ui_font_medium.render(label, False, (240, 240, 240))
+
 			lx = rect.centerx - label_surf.get_width() // 2
 			ly = icon_y_base + icon_size + 14
+
 			screen.blit(label_surf, (lx, ly))
 
-			level     = int(self.player.attribute_levels.get(attribute, 0))
+			level = int(self.player.attribute_levels.get(attribute, 0))
 			max_level = int(self.player.max_attribute_level)
 
-			dot_r     = 5
-			dot_gap   = 5
+			dot_r = 5
+			dot_gap = 5
 			dots_total_w = max_level * (dot_r * 2) + (max_level - 1) * dot_gap
-			dot_start_x  = rect.centerx - dots_total_w // 2
-			dot_y         = ly + label_surf.get_height() + 16
+			dot_start_x = rect.centerx - dots_total_w // 2
+			dot_y = ly + label_surf.get_height() + 16
 
 			for d in range(max_level):
 				dx = dot_start_x + d * (dot_r * 2 + dot_gap) + dot_r
+
 				filled = d < level
+
 				dot_color = light_col if filled else (60, 58, 75)
 				dot_border = light_col if filled else (80, 78, 95)
+
 				draw_circle(dot_color, (dx, dot_y), dot_r, target=screen)
+
 				if not filled:
 					draw_circle(dot_border, (dx, dot_y), dot_r, width=1, target=screen)
 
 			if t > 0.3:
-				hint_font  = self.services.fonts.get(18)
-				hint_surf  = hint_font.render("Click to choose", False, (220, 220, 180))
+				hint_font = self.services.fonts.get(18)
+				hint_surf = hint_font.render("Click to choose", False, (220, 220, 180))
+
 				hint_s2 = create_surface(hint_surf.get_width(), hint_surf.get_height(), alpha=True)
 				hint_s2.fill((0, 0, 0, 0))
 				hint_s2.blit(hint_surf, (0, 0))
+
 				hx = rect.centerx - hint_surf.get_width() // 2
 				hy = rect.bottom   - hint_surf.get_height() - 16
+
 				blit_surface(hint_s2, (hx, hy), target=screen)

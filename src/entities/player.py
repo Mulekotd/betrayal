@@ -11,12 +11,12 @@ from src.utils.rect import Rect
 
 
 class PlayerAction(Enum):
-	IDLE     = "IDLE"
-	WALK     = "WALK"
-	HIT      = "HIT"
-	DEATH    = "DEATH"
-	GUARD    = "GUARD"
-	ROLL     = "ROLL"
+	IDLE = "IDLE"
+	WALK = "WALK"
+	HIT = "HIT"
+	DEATH = "DEATH"
+	GUARD = "GUARD"
+	ROLL = "ROLL"
 
 
 class Player:
@@ -45,7 +45,7 @@ class Player:
 
 		self.state_machine = StateMachine(list(PlayerAction), PlayerAction.IDLE)
 
-		self.frame_width  = self.animation.frame_width
+		self.frame_width = self.animation.frame_width
 		self.frame_height = self.animation.frame_height
 
 		self.base_scale = 1.25
@@ -68,25 +68,25 @@ class Player:
 		self.max_attribute_level = 5
 
 		self.max_health = self.attributes["max_health"]
-		self.health     = float(self.max_health)
+		self.health = float(self.max_health)
 
 		self.invuln_duration = 0.6
-		self.invuln_left     = 0.0
-		self.blink_interval  = 0.08
-		self._blink_timer    = 0.0
-		self._blink_on       = False
+		self.invuln_left = 0.0
+		self.blink_interval = 0.08
+		self._blink_timer = 0.0
+		self._blink_on = False
 
 		self.base_radius = max(10.0, min(self.frame_width, self.frame_height) * 0.45)
-		self.radius      = self.base_radius
+		self.radius = self.base_radius
 		self.set_scale(1.5)
 
 		self.regen_timer = 0.0
-		self.facing      = (0.0, 1.0)
-		self.facing_dir  = 1
+		self.facing = (0.0, 1.0)
+		self.facing_dir = 1
 		self.last_facing_dir = 1
 
-		self.hit_anim_time_left    = 0.0
-		self.death_anim_time_left  = 0.0
+		self.hit_anim_time_left = 0.0
+		self.death_anim_time_left = 0.0
 		self.attack_anim_time_left = 0.0
 		self.current_attack_action = ""
 		self.next_attack_index = 0
@@ -94,14 +94,14 @@ class Player:
 		self.guard_hold = False
 		self.death_hold = False
 
-		self.roll_duration    = 0.28
-		self.roll_speed       = 520.0
-		self.roll_cooldown    = 0.8
-		self.roll_time_left   = 0.0
+		self.roll_duration = 0.28
+		self.roll_speed = 520.0
+		self.roll_cooldown = 0.8
+		self.roll_time_left = 0.0
 		self.roll_cooldown_left = 0.0
-		self.roll_dir_x       = 0.0
-		self.roll_dir_y       = 0.0
-		self._shift_was_down  = False
+		self.roll_dir_x = 0.0
+		self.roll_dir_y = 0.0
+		self._shift_was_down = False
 		self.roll_visual_time = 0.0
 		self.damage_popups: list[tuple[int, float, float]] = []
 		self._draw_cache: dict[tuple[str, int, bool, int, int], object] = {}
@@ -145,12 +145,12 @@ class Player:
 			self.roll_dir_x = float(self.facing_dir)
 			self.roll_dir_y = 0.0
 
-		self.roll_time_left     = self.roll_duration
-		self.roll_visual_time   = self.roll_duration
+		self.roll_time_left = self.roll_duration
+		self.roll_visual_time = self.roll_duration
 		self.roll_cooldown_left = self.roll_cooldown
-		self.invuln_left  = self.roll_duration
+		self.invuln_left = self.roll_duration
 		self._blink_timer = 0.0
-		self._blink_on    = True
+		self._blink_on = True
 		self._set_state(PlayerAction.ROLL)
 
 	def _sync_state_animation(self) -> None:
@@ -231,10 +231,10 @@ class Player:
 	) -> None:
 		self.animation.update(int(dt * 1000))
 
-		self.hit_anim_time_left    = max(0.0, self.hit_anim_time_left    - dt)
-		self.death_anim_time_left  = max(0.0, self.death_anim_time_left  - dt)
+		self.hit_anim_time_left = max(0.0, self.hit_anim_time_left    - dt)
+		self.death_anim_time_left = max(0.0, self.death_anim_time_left  - dt)
 		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
-		self.roll_visual_time      = max(0.0, self.roll_visual_time      - dt)
+		self.roll_visual_time = max(0.0, self.roll_visual_time      - dt)
 
 		if self.is_dead():
 			if self.death_anim_time_left > 0.0 or self.state_machine.state != PlayerAction.DEATH:
@@ -243,7 +243,7 @@ class Player:
 				self.death_hold = True
 				self._hold_death_frame()
 
-			self._blink_on  = False
+			self._blink_on = False
 			self.invuln_left = 0.0
 
 			return
@@ -251,7 +251,7 @@ class Player:
 		keyboard = input_manager.keyboard
 		guard_pressed = keyboard.key_pressed("SPACE")
 
-		self.roll_time_left     = max(0.0, self.roll_time_left     - dt)
+		self.roll_time_left = max(0.0, self.roll_time_left     - dt)
 		self.roll_cooldown_left = max(0.0, self.roll_cooldown_left - dt)
 
 		dx = 0.0
@@ -300,7 +300,7 @@ class Player:
 		if is_moving:
 			length = math.hypot(dx, dy)
 			if length > 0.0:
-				self.facing     = (dx / length, dy / length)
+				self.facing = (dx / length, dy / length)
 
 				if dx != 0.0:
 					self.last_facing_dir = -1 if dx < 0 else 1
@@ -363,14 +363,14 @@ class Player:
 
 	def resolve_enemy_collisions(self, enemies: Iterable[object]) -> None:
 		max_damage = 0
-		collided   = False
+		collided = False
 
 		player_center_x, player_center_y = self.center
 
 		for enemy in enemies:
-			enemy_center   = getattr(enemy, "center",         None)
-			enemy_radius   = getattr(enemy, "radius",         None)
-			enemy_damage   = getattr(enemy, "damage",         0)
+			enemy_center = getattr(enemy, "center",         None)
+			enemy_radius = getattr(enemy, "radius",         None)
+			enemy_damage = getattr(enemy, "damage",         0)
 			contact_damage = bool(getattr(enemy, "contact_damage", True))
 
 			if enemy_center is None or enemy_radius is None:
@@ -378,7 +378,7 @@ class Player:
 
 			enemy_dx = enemy_center[0] - player_center_x
 			enemy_dy = enemy_center[1] - player_center_y
-			dist_sq  = enemy_dx * enemy_dx + enemy_dy * enemy_dy
+			dist_sq = enemy_dx * enemy_dx + enemy_dy * enemy_dy
 			min_dist = self.radius + float(enemy_radius)
 
 			if dist_sq >= min_dist * min_dist:
@@ -393,7 +393,7 @@ class Player:
 
 			enemy_move = getattr(enemy, "move_by", None)
 			if callable(enemy_move):
-				dist    = math.sqrt(max(dist_sq, 0.000001))
+				dist = math.sqrt(max(dist_sq, 0.000001))
 				overlap = max(0.0, min_dist - dist)
 				if overlap > 0.0:
 					nx = enemy_dx / dist
@@ -407,7 +407,7 @@ class Player:
 		if self.is_dead() or self.invuln_left > 0.0:
 			return False
 
-		reduced    = max(1, int(amount - self.attributes["defense"]))
+		reduced = max(1, int(amount - self.attributes["defense"]))
 		self.health = max(0.0, self.health - reduced)
 		cx, cy = self.center
 		self.damage_popups.append((reduced, cx, cy - self.height * 0.35))
@@ -415,9 +415,9 @@ class Player:
 		if self.is_dead():
 			self._trigger_death_animation()
 		else:
-			self.invuln_left  = self.invuln_duration
+			self.invuln_left = self.invuln_duration
 			self._blink_timer = 0.0
-			self._blink_on    = True
+			self._blink_on = True
 			if not self.is_guarding():
 				self._trigger_hit_animation()
 
@@ -502,12 +502,12 @@ class Player:
 			self._blink_on = False
 			return
 
-		self.invuln_left   = max(0.0, self.invuln_left - dt)
+		self.invuln_left = max(0.0, self.invuln_left - dt)
 		self._blink_timer += dt
 
 		if self._blink_timer >= self.blink_interval:
 			self._blink_timer = 0.0
-			self._blink_on    = not self._blink_on
+			self._blink_on = not self._blink_on
 
 	def _update_regen(self, dt: float) -> None:
 		if self.is_dead():
@@ -517,17 +517,17 @@ class Player:
 
 		if self.regen_timer >= 1.0:
 			self.regen_timer = 0.0
-			heal             = self.max_health * self.attributes["health_regen"]
-			self.health      = min(self.max_health, self.health + heal)
+			heal = self.max_health * self.attributes["health_regen"]
+			self.health = min(self.max_health, self.health + heal)
 
 	def init_progression(self) -> None:
-		self.level       = 1
-		self.xp          = 0
-		self.xp_to_next  = 25
+		self.level = 1
+		self.xp = 0
+		self.xp_to_next = 25
 
 	def add_xp(self, amount: int) -> int:
 		self.xp        += amount
-		levels_gained   = 0
+		levels_gained = 0
 
 		while self.xp >= self.xp_to_next:
 			self.xp -= self.xp_to_next
@@ -538,7 +538,7 @@ class Player:
 
 	def _level_up(self) -> None:
 		self.level      += 1
-		self.xp_to_next  = int(self.xp_to_next * 1.45)
+		self.xp_to_next = int(self.xp_to_next * 1.45)
 
 	def upgrade_attribute(self, name: str) -> bool:
 		if name not in self.attribute_levels:
@@ -549,8 +549,8 @@ class Player:
 		self.attribute_levels[name] += 1
 
 		if name == "max_health":
-			self.max_health  = int(self.max_health * 1.15)
-			self.health      = min(self.max_health, self.health + self.max_health * 0.15)
+			self.max_health = int(self.max_health * 1.15)
+			self.health = min(self.max_health, self.health + self.max_health * 0.15)
 		elif name == "health_regen":
 			self.attributes[name] = min(0.15, self.attributes[name] + 0.01)
 		elif name == "defense":

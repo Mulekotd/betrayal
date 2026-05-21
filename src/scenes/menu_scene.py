@@ -121,6 +121,7 @@ class MenuScene:
 
 	def render(self) -> None:
 		screen = get_screen()
+
 		screen.blit(self.background_base_layer, (0, 0))
 		screen.blit(self.background_blur_layer, (0, 0))
 
@@ -169,8 +170,8 @@ class MenuScene:
 
 		for radius in range(max_radius, 0, -8):
 			t = radius / max(1, max_radius)
+			
 			alpha = int((1.0 - t) * (1.0 - t) * 100)
-
 			if alpha <= 0:
 				continue
 
@@ -230,8 +231,8 @@ class MenuScene:
 		step = max(1, int(max_radius / 12))
 		for r in range(max_radius, 0, -step):
 			t = r / max(1, max_radius)
-			alpha = int((1.0 - t) * 90)
 
+			alpha = int((1.0 - t) * 90)
 			if alpha <= 0:
 				continue
 
@@ -286,7 +287,7 @@ class MenuScene:
 				services=self.services,
 				world_width=self.world_width,
 				world_height=self.world_height,
-				game=self.game,
+				game=self.game
 			)
 		)
 
@@ -299,7 +300,7 @@ class MenuScene:
 				services=self.services,
 				world_width=self.world_width,
 				world_height=self.world_height,
-				on_back=self._return_to_menu,
+				on_back=self._return_to_menu
 			)
 		)
 
@@ -309,7 +310,7 @@ class MenuScene:
 				game=self.game,
 				services=self.services,
 				world_width=self.world_width,
-				world_height=self.world_height,
+				world_height=self.world_height
 			)
 		)
 

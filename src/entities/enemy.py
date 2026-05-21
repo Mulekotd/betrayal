@@ -12,13 +12,13 @@ from src.utils.rect import Rect
 
 
 class EnemyAction(Enum):
-	IDLE     = "IDLE"
-	WALK     = "WALK"
+	IDLE = "IDLE"
+	WALK = "WALK"
 	ATTACK_1 = "ATTACK_1"
 	ATTACK_2 = "ATTACK_2"
 	ATTACK_3 = "ATTACK_3"
-	GUARD    = "GUARD"
-	HIT      = "HIT"
+	GUARD = "GUARD"
+	HIT = "HIT"
 
 
 class Enemy:
@@ -379,6 +379,7 @@ class Soldier(Enemy):
 		dy = target_y - cy
 		self.facing_dir = -1 if dx < 0 else 1
 		dist_sq = dx * dx + dy * dy
+
 		self._try_release_ranged_shot(
 			origin_x = cx,
 			origin_y = cy,
@@ -499,9 +500,9 @@ class Soldier(Enemy):
 		self.attack_anim_time_left = min(action_duration, self.attack_cooldown)
 		self._set_state(self._action_for_name(action))
 
-_GUARD_DURATION       = 1.0
+_GUARD_DURATION = 1.0
 _GUARD_DAMAGE_REDUCTION = 0.60
-_GUARD_COOLDOWN       = 3.0
+_GUARD_COOLDOWN = 3.0
 
 class Knight(Enemy):
 	def __init__(
@@ -582,6 +583,7 @@ class Knight(Enemy):
 
 		if self.guard_timer > 0.0:
 			self.guard_timer = max(0.0, self.guard_timer - dt)
+
 		if self.guard_cooldown_timer > 0.0:
 			self.guard_cooldown_timer = max(0.0, self.guard_cooldown_timer - dt)
 
@@ -699,7 +701,7 @@ class EnemyManager:
 		base_spawn_rate: float = 0.12,
 		spawn_growth: float = 0.06,
 		max_spawn_rate: float = 1.35,
-		max_active_enemies: int = 90,
+		max_active_enemies: int = 90
 	) -> None:
 		self.assets_dir = Path(assets_dir)
 		self.world_width = world_width
@@ -772,6 +774,7 @@ class EnemyManager:
 
 	def draw(self, camera_x: float = 0.0, camera_y: float = 0.0) -> None:
 		screen = get_screen()
+
 		left = camera_x - 96
 		top = camera_y - 96
 		right = camera_x + screen.get_width() + 96
@@ -1036,9 +1039,11 @@ class EnemyManager:
 			if min_clearance == left_clearance:
 				target_x = rect.left - radius - 0.01
 				return (target_x - center_x, 0.0)
+	
 			if min_clearance == right_clearance:
 				target_x = rect.right + radius + 0.01
 				return (target_x - center_x, 0.0)
+
 			if min_clearance == top_clearance:
 				target_y = rect.top - radius - 0.01
 				return (0.0, target_y - center_y)

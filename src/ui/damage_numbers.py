@@ -19,7 +19,7 @@ class DamageNumbers:
 			"vy": -135.0,
 			"life": 0.30,
 			"max_life": 0.30,
-			"color": color,
+			"color": color
 		})
 
 	def update(self, dt: float) -> None:
@@ -45,20 +45,25 @@ class DamageNumbers:
 		for item in self.items:
 			text = str(item["text"])
 			color = item["color"]
+
 			surf, shadow = self._surfaces(text, color)
+
 			life = float(item["life"])
 			max_life = float(item["max_life"])
+
 			alpha = max(0, min(255, int(255 * (life / max_life))))
 			surf.set_alpha(alpha)
 			shadow.set_alpha(alpha)
 
 			x = int(float(item["x"]) - camera_x - surf.get_width() * 0.5)
 			y = int(float(item["y"]) - camera_y)
+
 			screen.blit(shadow, (x + 1, y + 1))
 			screen.blit(surf, (x, y))
 
 	def _surfaces(self, text: str, color: tuple[int, int, int]):
 		key = (text, color)
+
 		cached = self._cache.get(key)
 		if cached is not None:
 			return cached
@@ -66,4 +71,5 @@ class DamageNumbers:
 		surf = self.font.render(text, False, color)
 		shadow = self.font.render(text, False, (0, 0, 0))
 		self._cache[key] = (surf, shadow)
+
 		return surf, shadow

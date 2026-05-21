@@ -25,37 +25,37 @@ def _load(path: Path, w: int | None = None, h: int | None = None) -> Any | None:
         surf = scale_surface(surf, w, h, smooth=False)
     elif w is not None:
         ratio = w / surf.get_width()
-        surf  = scale_surface(surf, w, int(surf.get_height() * ratio), smooth=False)
+        surf = scale_surface(surf, w, int(surf.get_height() * ratio), smooth=False)
     elif h is not None:
         ratio = h / surf.get_height()
-        surf  = scale_surface(surf, int(surf.get_width() * ratio), h, smooth=False)
+        surf = scale_surface(surf, int(surf.get_width() * ratio), h, smooth=False)
 
     return surf
 
 class HUDColors:
-    HUD_TEXT       = (245, 245, 235)
+    HUD_TEXT = (245, 245, 235)
 
-    HP_BG          = (20,  10,  10)
-    HP_FILL        = (200, 50,  50)
-    HP_FILL_LOW    = (230, 100, 30)
-    HP_BORDER      = (80,  30,  30)
-    HP_TEXT        = HUD_TEXT
+    HP_BG = (20,  10,  10)
+    HP_FILL = (200, 50,  50)
+    HP_FILL_LOW = (230, 100, 30)
+    HP_BORDER = (80,  30,  30)
+    HP_TEXT = HUD_TEXT
 
-    XP_BG          = (10,  10,  24)
-    XP_FILL        = (50,  120, 255)
-    XP_BORDER      = (30,  60,  120)
-    XP_TEXT        = HUD_TEXT
+    XP_BG = (10,  10,  24)
+    XP_FILL = (50,  120, 255)
+    XP_BORDER = (30,  60,  120)
+    XP_TEXT = HUD_TEXT
 
-    KILLS_TEXT     = HUD_TEXT
+    KILLS_TEXT = HUD_TEXT
 
-    TIMER_BG       = (10,  10,  20,  160)
-    TIMER_TEXT     = HUD_TEXT
-    TIMER_SHADOW   = (0, 0, 0)
+    TIMER_BG = (10,  10,  20,  160)
+    TIMER_TEXT = HUD_TEXT
+    TIMER_SHADOW = (0, 0, 0)
 
-    WEAPON_BG      = (18,  22,  28)
-    WEAPON_BORDER  = (70,  80,  90)
+    WEAPON_BG = (18,  22,  28)
+    WEAPON_BORDER = (70,  80,  90)
     WEAPON_SEL_BOR = (235, 210, 120)
-    WEAPON_INNER   = (8, 10, 14)
+    WEAPON_INNER = (8, 10, 14)
 
 class HUD:
     def __init__(
@@ -66,13 +66,13 @@ class HUD:
         images_dir:      Path,
         padding:         int = 0
     ) -> None:
-        self.viewport_width  = viewport_width
+        self.viewport_width = viewport_width
         self.viewport_height = viewport_height
-        self.padding         = max(0, int(padding))
+        self.padding = max(0, int(padding))
 
-        self.font_hud    = fonts.mini(30)
-        self.font_xp     = fonts.mini(22)
-        self.font_small  = fonts.mini(18)
+        self.font_hud = fonts.mini(30)
+        self.font_xp = fonts.mini(22)
+        self.font_small = fonts.mini(18)
 
         self.hp_bar_w = 190
         self.hp_bar_h = 20
@@ -81,10 +81,10 @@ class HUD:
         self.xp_bar_x = 0
         self.xp_bar_y = viewport_height - self.xp_bar_h
 
-        self.weapon_order     = ["fire", "ice", "wind"]
+        self.weapon_order = ["fire", "ice", "wind"]
         self.weapon_slot_size = 64
-        self.weapon_icon_pad  = 10
-        self.weapon_gap       = 8
+        self.weapon_icon_pad = 10
+        self.weapon_gap = 8
 
         icon_inner = max(1, self.weapon_slot_size - self.weapon_icon_pad * 2)
         self.weapon_icons: dict[str, Any | None] = {
@@ -167,7 +167,7 @@ class HUD:
 
         label = f"LV {level}"
 
-        surf  = self.font_xp.render(label, False, HUDColors.XP_TEXT)
+        surf = self.font_xp.render(label, False, HUDColors.XP_TEXT)
         screen.blit(surf, ((bw - surf.get_width()) // 2, by + (bh - surf.get_height()) // 2))
 
     def _draw_kills_counter(self, total_kills: int) -> None:
@@ -188,7 +188,7 @@ class HUD:
 
         label = self._timer_label(run_time)
 
-        text_surf   = self.font_hud.render(label, False, HUDColors.TIMER_TEXT)
+        text_surf = self.font_hud.render(label, False, HUDColors.TIMER_TEXT)
         shadow_surf = self.font_hud.render(label, False, HUDColors.TIMER_SHADOW)
 
         tx, ty, _, _ = self._timer_rect(label)

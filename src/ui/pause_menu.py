@@ -32,12 +32,15 @@ class PauseMenu:
 		self._overlay.fill((0, 0, 0, 125))
 
 	def set_actions(self, resume: Callable[[], None], options: Callable[[], None], quit_game: Callable[[], None]) -> None:
-		labels = [("VOLTAR", resume), ("OPCOES", options), ("SAIR", quit_game)]
+		labels = [("VOLTAR", resume), ("OPÇÕES", options), ("SAIR", quit_game)]
+
 		button_w = 260
 		button_h = 48
 		gap = 14
+
 		start_x = (self.width - button_w) // 2
 		start_y = int(self.height * 0.42)
+
 		self.buttons = [
 			PauseButton(label, start_x, start_y + index * (button_h + gap), button_w, button_h, action)
 			for index, (label, action) in enumerate(labels)
@@ -97,5 +100,5 @@ class PauseMenu:
 				(
 					button.x + (button.width - text.get_width()) // 2,
 					button.y + (button.height - text.get_height()) // 2
-				),
+				)
 			)

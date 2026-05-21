@@ -27,7 +27,7 @@ class SettingsScene:
 		services: GameServices,
 		world_width: int,
 		world_height: int,
-		on_back: Callable[[], None],
+		on_back: Callable[[], None]
 	) -> None:
 		self.game = game
 		self.services = services
@@ -119,25 +119,30 @@ class SettingsScene:
 
 	def _draw_background(self) -> None:
 		screen = get_screen()
+
 		top_color = (5, 13, 20)
 		bottom_color = (28, 74, 82)
 
 		for y in range(self.world_height):
 			t = y / max(1, self.world_height - 1)
+
 			color = (
 				int(top_color[0] + (bottom_color[0] - top_color[0]) * t),
 				int(top_color[1] + (bottom_color[1] - top_color[1]) * t),
-				int(top_color[2] + (bottom_color[2] - top_color[2]) * t),
+				int(top_color[2] + (bottom_color[2] - top_color[2]) * t)
 			)
+
 			draw_line(color, (0, y), (self.world_width, y), target=screen)
 
 	def _draw_title(self) -> None:
 		screen = get_screen()
-		title = self.title_font.render("CONFIGURACOES", False, (245, 245, 235))
+
+		title = self.title_font.render("CONFIGURAÇÕES", False, (245, 245, 235))
 		screen.blit(title, ((self.world_width - title.get_width()) // 2, int(self.world_height * 0.20)))
 
 	def _draw_volume_slider(self) -> None:
 		screen = get_screen()
+
 		label = self.label_font.render("VOLUME", False, (245, 245, 235))
 		value = self.value_font.render(f"{self.volume}%", False, (245, 210, 120))
 
@@ -149,23 +154,26 @@ class SettingsScene:
 		screen.blit(value, (int(value_x), int(label_y + 4)))
 
 		draw_rect((18, 22, 28), self.slider_rect, target=screen)
+
 		fill_w = int(self.slider_rect.width * (self.volume / 100.0))
 		if fill_w > 0:
 			draw_rect(
 				(90, 205, 225),
 				(self.slider_rect.left, self.slider_rect.top, fill_w, self.slider_rect.height),
-				target=screen,
+				target=screen
 			)
 
 		draw_rect((100, 112, 124), self.slider_rect, width=2, target=screen)
 
 		knob_x = int(self.slider_rect.left + fill_w)
 		knob_y = int(self.slider_rect.top + self.slider_rect.height // 2)
+
 		draw_circle((10, 14, 20), (knob_x, knob_y), 13, target=screen)
 		draw_circle((245, 210, 120), (knob_x, knob_y), 10, target=screen)
 
 	def _draw_back_button(self) -> None:
 		screen = get_screen()
+
 		rect = self.back_button.rect
 		fill = (44, 52, 62) if self.hover_back else (24, 30, 38)
 		border = (245, 210, 120) if self.hover_back else (100, 112, 124)
@@ -178,6 +186,6 @@ class SettingsScene:
 			text,
 			(
 				int(rect.left + (rect.width - text.get_width()) // 2),
-				int(rect.top + (rect.height - text.get_height()) // 2),
-			),
+				int(rect.top + (rect.height - text.get_height()) // 2)
+			)
 		)
