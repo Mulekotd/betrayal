@@ -5,6 +5,7 @@ class Audio:
 	def __init__(self, volume: int = 50) -> None:
 		self._volume = 50
 		self._sounds: dict[str, Sound] = {}
+		self._sound_volumes: dict[str, float] = {}
 		self._music: dict[str, Music] = {}
 		self._music_key: str | None = None
 		self._audio_available = self._ensure_audio_backend()
@@ -33,13 +34,15 @@ class Audio:
 	def get_volume(self) -> int:
 		return self._volume
 
-	def load_sound(self, key: str, filepath: str) -> None:
+	def load_sound(self, key: str, filepath: str, volume: float = 1.0) -> None:
 		if not self._ensure_audio_backend():
 			self._audio_available = False
 			return
 
 		sound = Sound(filepath)
-		sound.set_volume(self._volume)
+		self._sound_volumes[key] = max(0.0, min(1.0, volume))
+		adj_volume = int(self._volume * self._sound_volumes[key])
+		sound.set_volume(adj_volume)
 
 		self._sounds[key] = sound
 
@@ -52,6 +55,23 @@ class Audio:
 			return
 
 		sound.play(-1 if repeat else 0)
+
+	def stop_sound(self, key: str) -> None:
+		if not self._audio_available:
+			return
+
+		sound = self._sounds.get(key)
+		if sound is None:
+			return
+
+		sound.stop()
+
+	def stop_all_sounds(self) -> None:
+		if not self._audio_available:
+			return
+
+		for sound in self._sounds.values():
+			sound.stop()
 
 	def load_music(self, filepath: str, key: str = "music") -> None:
 		if not self._ensure_audio_backend():

@@ -155,6 +155,10 @@ class GameScene:
 		self.game_over_title_font = self.services.fonts.get(68)
 		self.game_over_hint_font = self.services.fonts.get(24)
 
+		# Play theme music when game scene starts
+		if self.game and self.game.audio:
+			self.game.audio.play_sound("theme", repeat=True)
+
 	def handle_events(self, input_manager: Input | None) -> None:
 		if input_manager is None:
 			return
@@ -263,6 +267,7 @@ class GameScene:
 	def _update_game_over(self, input_manager: Input) -> None:
 		if input_manager.keyboard.key_pressed("ENTER"):
 			self._restart_run()
+			self.run_time = 0
 
 	def _resume_game(self) -> None:
 		self.pause_menu.close()
@@ -288,6 +293,10 @@ class GameScene:
 
 		if self.game is None:
 			return
+
+		# Stop theme music when quitting to menu
+		if self.game.audio:
+			self.game.audio.stop_sound("theme")
 
 		self.pause_menu.close()
 		self.game.set_scene(
@@ -377,6 +386,11 @@ class GameScene:
 		if self.weapon_timer <= 0.0 and not self.player.is_guarding():
 			self.weapon_slashes.extend(sword.spawn_slashes(self.player))
 			self.weapon_timer = sword.get_cooldown(attack_speed)
+
+			# Play slash sound effect
+			sound_key = f"{self.weapon_type}_slash"
+			if self.game and self.game.audio:
+				self.game.audio.play_sound(sound_key)
 
 		enemies = self._near_player_enemies(180.0)
 

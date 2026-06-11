@@ -75,15 +75,21 @@ class Game:
         if icon_path.exists():
             self.window.set_icon(icon_path)
 
+        # Load theme and slash sound effects
         if theme_path.exists():
             theme_key = "theme"
+            self.audio.load_sound(theme_key, str(theme_path), volume=1.0)
 
-            self.audio.load_sound(theme_key, str(theme_path))
-            if theme_key in self.audio._sounds:
-                self.audio.play_sound(theme_key, repeat=True)
-            else:
-                self.audio.load_music(str(theme_path), key=theme_key)
-                self.audio.play_music(repeat=True)
+        sounds_dir = assets_dir / "sounds"
+        slash_sounds = {
+            "fire_slash": sounds_dir / "fire_slash.ogg",
+            "ice_slash": sounds_dir / "ice_slash.ogg",
+            "wind_slash": sounds_dir / "wind_slash.ogg"
+        }
+
+        for sound_key, sound_path in slash_sounds.items():
+            if sound_path.exists():
+                self.audio.load_sound(sound_key, str(sound_path), volume=1.0)
 
         self.input = Input()
         self.input.keyboard = self.window.keyboard
