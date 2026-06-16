@@ -75,6 +75,7 @@ class Enemy:
 		self.burn_timer = 0.0
 		self.freeze_timer = 0.0
 		self.ice_hits = 0
+		self.ice_combo_timer = 0.0
 
 		self.hit_anim_time_left = 0.0
 
@@ -100,6 +101,7 @@ class Enemy:
 		self.burn_timer = 0.0
 		self.freeze_timer = 0.0
 		self.ice_hits = 0
+		self.ice_combo_timer = 0.0
 		self.hit_anim_time_left = 0.0
 		self.set_scale(self.scale_multiplier)
 		self._set_state(EnemyAction.IDLE)
@@ -173,6 +175,19 @@ class Enemy:
 
 		self._set_state(EnemyAction.WALK)
 
+	def update_culled(self, dt: float) -> None:
+		self._update_statuses(dt)
+
+		if self.health <= 0:
+			return
+
+		if self.freeze_timer > 0.0:
+			self._set_state(EnemyAction.IDLE)
+			return
+
+		if self.hit_anim_time_left > 0.0:
+			self._set_state(EnemyAction.HIT)
+
 	def _sync_state_animation(self) -> None:
 		self.animation.play(self.state_machine.state.value)
 
@@ -208,11 +223,16 @@ class Enemy:
 		self.slow_factor = min(self.slow_factor, slow_factor)
 		self.slow_timer = max(self.slow_timer, duration)
 
-	def register_ice_hit(self, freeze_hits: int, freeze_duration: float) -> None:
+	def register_ice_hit(self, freeze_hits: int, freeze_duration: float, combo_window: float = 0.0) -> None:
+		if combo_window > 0.0 and self.ice_combo_timer <= 0.0:
+			self.ice_hits = 0
+
 		self.ice_hits += 1
+		self.ice_combo_timer = max(self.ice_combo_timer, combo_window)
 
 		if self.ice_hits >= freeze_hits:
 			self.ice_hits = 0
+			self.ice_combo_timer = 0.0
 			self.freeze_timer = max(self.freeze_timer, freeze_duration)
 
 	def _update_statuses(self, dt: float) -> None:
@@ -231,6 +251,11 @@ class Enemy:
 
 		if self.freeze_timer > 0.0:
 			self.freeze_timer = max(0.0, self.freeze_timer - dt)
+
+		if self.ice_combo_timer > 0.0:
+			self.ice_combo_timer = max(0.0, self.ice_combo_timer - dt)
+			if self.ice_combo_timer <= 0.0:
+				self.ice_hits = 0
 
 		if self.hit_anim_time_left > 0.0:
 			self.hit_anim_time_left = max(0.0, self.hit_anim_time_left - dt)
@@ -452,6 +477,19 @@ class Soldier(Enemy):
 
 		self._set_state(EnemyAction.WALK)
 
+	def update_culled(self, dt: float) -> None:
+		super().update_culled(dt)
+
+		if self.health <= 0:
+			return
+
+		self.attack_timer = max(0.0, self.attack_timer - dt * self.slow_factor)
+		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
+
+		if self.pending_ranged_shot and self.attack_anim_time_left <= 0.0:
+			self.pending_ranged_shot = False
+			self.ranged_shot_fired = True
+
 	def _try_release_ranged_shot(
 		self,
 		origin_x: float,
@@ -651,6 +689,20 @@ class Knight(Enemy):
 		self.y += move_dy * inv_dist * speed * dt
 		self._set_state(EnemyAction.WALK)
 
+	def update_culled(self, dt: float) -> None:
+		super().update_culled(dt)
+
+		if self.health <= 0:
+			return
+
+		self.attack_timer = max(0.0, self.attack_timer - dt * self.slow_factor)
+		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
+		self.guard_timer = max(0.0, self.guard_timer - dt)
+		self.guard_cooldown_timer = max(0.0, self.guard_cooldown_timer - dt)
+
+		if self.is_guarding and self.attack_anim_time_left <= 0.0:
+			self._set_state(EnemyAction.GUARD)
+
 	def _play_attack(self, action: str) -> None:
 		if action not in self.animation.frames or not self.animation.frames[action]:
 			self.current_attack_action = ""
@@ -698,9 +750,9 @@ class EnemyManager:
 		assets_dir: str | Path,
 		world_width: int,
 		world_height: int,
-		base_spawn_rate: float = 0.12,
-		spawn_growth: float = 0.06,
-		max_spawn_rate: float = 1.35,
+		base_spawn_rate: float = 0.11,
+		spawn_growth: float = 0.055,
+		max_spawn_rate: float = 1.20,
 		max_active_enemies: int = 90
 	) -> None:
 		self.assets_dir = Path(assets_dir)
@@ -728,6 +780,8 @@ class EnemyManager:
 
 		self._arrow_rotation_cache: dict[int, Any] = {}
 		self._static_colliders: list[object] = []
+		self._static_collider_cell_size = 192.0
+		self._static_collider_cells: dict[tuple[int, int], list[object]] = {}
 
 		self.active: list[Enemy] = []
 		self.pool: list[Enemy] = []
@@ -749,13 +803,18 @@ class EnemyManager:
 			(lambda: Knight(self.knight_sprite_path), 0.2)
 		]
 
-	def update(self, player: object, dt: float) -> int:
+	def update(self, player: object, dt: float, active_bounds: object | None = None) -> int:
 		self._frame_index += 1
 		self.elapsed_time += dt
 		target_x, target_y = getattr(player, "center", (self.world_width * 0.5, self.world_height * 0.5))
 		self._spawn_by_budget(dt, target_x=target_x, target_y=target_y)
 
+		simulated_enemies: list[Enemy] = []
 		for enemy in self.active:
+			if active_bounds is not None and not self._enemy_intersects_bounds(enemy, active_bounds):
+				enemy.update_culled(dt)
+				continue
+
 			enemy.update_towards(
 				target_x,
 				target_y,
@@ -765,10 +824,11 @@ class EnemyManager:
 			)
 			self._resolve_enemy_static_collisions(enemy)
 			self._clamp_enemy_to_world(enemy)
+			simulated_enemies.append(enemy)
 
 		self._update_arrows(player, dt)
-		if len(self.active) <= 70 or self._frame_index % 2 == 0:
-			self._resolve_enemy_collisions()
+		if len(simulated_enemies) <= 70 or self._frame_index % 2 == 0:
+			self._resolve_enemy_collisions(simulated_enemies)
 
 		return self._recycle_dead()
 
@@ -807,7 +867,14 @@ class EnemyManager:
 		return self._recycle_dead()
 
 	def set_static_colliders(self, colliders: list[object]) -> None:
-		self._static_colliders = [getattr(rect, 'copy')() if callable(getattr(rect, 'copy', None)) else rect for rect in colliders]
+		self._static_colliders = [
+			getattr(rect, "copy")() if callable(getattr(rect, "copy", None)) else rect
+			for rect in colliders
+		]
+		self._static_collider_cells.clear()
+
+		for rect in self._static_colliders:
+			self._register_static_collider(rect)
 
 	def set_world_bounds(self, bounds: object) -> None:
 		self.world_bounds = getattr(bounds, 'copy')() if callable(getattr(bounds, 'copy', None)) else bounds
@@ -911,14 +978,15 @@ class EnemyManager:
 
 		return (x, y)
 
-	def _resolve_enemy_collisions(self) -> None:
-		if len(self.active) < 2:
+	def _resolve_enemy_collisions(self, enemies: list[Enemy] | None = None) -> None:
+		targets = self.active if enemies is None else enemies
+		if len(targets) < 2:
 			return
 
-		self.cluster.rebuild(self.active)
+		self.cluster.rebuild(targets)
 		visited_pairs: set[tuple[int, int]] = set()
 
-		for enemy in self.active:
+		for enemy in targets:
 			for other in self.cluster.candidates_for(enemy):
 				if enemy is other:
 					continue
@@ -1002,8 +1070,9 @@ class EnemyManager:
 
 		for _ in range(2):
 			resolved = False
+			colliders = self._candidate_static_colliders(center_x, center_y, radius)
 
-			for rect in self._static_colliders:
+			for rect in colliders:
 				push_x, push_y = self._circle_rect_push(center_x, center_y, radius, rect)
 
 				if push_x == 0.0 and push_y == 0.0:
@@ -1060,11 +1129,53 @@ class EnemyManager:
 		return (nx * overlap, ny * overlap)
 
 	def _intersects_static_colliders(self, center_x: float, center_y: float, radius: float) -> bool:
-		for rect in self._static_colliders:
+		for rect in self._candidate_static_colliders(center_x, center_y, radius):
 			if self._circle_intersects_rect(center_x, center_y, radius, rect):
 				return True
 
 		return False
+
+	def _enemy_intersects_bounds(self, enemy: Enemy, bounds: object) -> bool:
+		return not (
+			enemy.x + enemy.width < bounds.left
+			or enemy.x > bounds.right
+			or enemy.y + enemy.height < bounds.top
+			or enemy.y > bounds.bottom
+		)
+
+	def _register_static_collider(self, rect: object) -> None:
+		left = int(math.floor(rect.left / self._static_collider_cell_size))
+		right = int(math.floor(rect.right / self._static_collider_cell_size))
+		top = int(math.floor(rect.top / self._static_collider_cell_size))
+		bottom = int(math.floor(rect.bottom / self._static_collider_cell_size))
+
+		for cell_x in range(left, right + 1):
+			for cell_y in range(top, bottom + 1):
+				self._static_collider_cells.setdefault((cell_x, cell_y), []).append(rect)
+
+	def _candidate_static_colliders(self, center_x: float, center_y: float, radius: float) -> list[object]:
+		if not self._static_collider_cells:
+			return self._static_colliders
+
+		left = int(math.floor((center_x - radius) / self._static_collider_cell_size))
+		right = int(math.floor((center_x + radius) / self._static_collider_cell_size))
+		top = int(math.floor((center_y - radius) / self._static_collider_cell_size))
+		bottom = int(math.floor((center_y + radius) / self._static_collider_cell_size))
+
+		candidates: list[object] = []
+		seen: set[int] = set()
+
+		for cell_x in range(left - 1, right + 2):
+			for cell_y in range(top - 1, bottom + 2):
+				for rect in self._static_collider_cells.get((cell_x, cell_y), []):
+					rect_id = id(rect)
+					if rect_id in seen:
+						continue
+
+					seen.add(rect_id)
+					candidates.append(rect)
+
+		return candidates
 
 	def _circle_intersects_rect(self, center_x: float, center_y: float, radius: float, rect: object) -> bool:
 		closest_x = max(rect.left, min(center_x, rect.right))

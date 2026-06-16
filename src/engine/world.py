@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from src.utils.rect import Rect
+from src.utils.window import get_screen
 
 from src.engine.tileset import TileObject, TileSet
 
@@ -52,6 +53,7 @@ class World:
 
 		self.tree_tileset: TileSet | None = None
 		self.objects: list[TileObject] = []
+		self._sorted_objects: list[TileObject] = []
 		self.static_colliders: list[Rect] = []
 		self._rng = np.random.default_rng()
 
@@ -62,6 +64,7 @@ class World:
 
 		if not trees_path.exists():
 			self.tree_tileset = None
+			self._sorted_objects = []
 			return
 
 		self.tree_tileset = TileSet(
@@ -73,10 +76,23 @@ class World:
 		)
 
 		self.objects = self._generate_tree_layout(player_center=player_center, player_radius=player_radius)
+		self._sorted_objects = sorted(self.objects, key=lambda item: item.y + item.height)
 		self.static_colliders = [obj.rect for obj in self.objects if obj.collidable]
 
 	def draw(self, camera_x: float = 0.0, camera_y: float = 0.0) -> None:
-		for obj in sorted(self.objects, key=lambda item: item.y + item.height):
+		if not self._sorted_objects:
+			return
+
+		screen = get_screen()
+		left = camera_x - 96.0
+		top = camera_y - 96.0
+		right = camera_x + screen.get_width() + 96.0
+		bottom = camera_y + screen.get_height() + 96.0
+
+		for obj in self._sorted_objects:
+			if obj.left + obj.width < left or obj.left > right or obj.top + obj.height < top or obj.top > bottom:
+				continue
+
 			obj.draw(camera_x=camera_x, camera_y=camera_y)
 
 	def _generate_tree_layout(self, player_center: tuple[float, float], player_radius: float) -> list[TileObject]:

@@ -28,7 +28,7 @@ class Player:
 		move_speed: float = 220.0,
 		attack_speed: float = 1.2,
 		strength: int = 6,
-		max_health: int = 100,
+		max_health: int = 250,
 		health_regen: float = 0.02,
 		defense: int = 2
 	) -> None:
@@ -106,6 +106,9 @@ class Player:
 		self.damage_popups: list[tuple[int, float, float]] = []
 		self._draw_cache: dict[tuple[str, int, bool, int, int], object] = {}
 		self._mask_cache: dict[tuple[str, int, bool, int, int], object] = {}
+		self.xp_gain_multiplier = 1.45
+		self.xp_growth_factor = 1.15
+		self.base_xp_to_next = 25
 
 		self._sync_state_animation()
 		self.init_progression()
@@ -523,10 +526,11 @@ class Player:
 	def init_progression(self) -> None:
 		self.level = 1
 		self.xp = 0
-		self.xp_to_next = 25
+		self.xp_to_next = self.base_xp_to_next
 
 	def add_xp(self, amount: int) -> int:
-		self.xp        += amount
+		scaled_amount = max(1, int(round(amount * self.xp_gain_multiplier)))
+		self.xp        += scaled_amount
 		levels_gained = 0
 
 		while self.xp >= self.xp_to_next:
@@ -538,7 +542,7 @@ class Player:
 
 	def _level_up(self) -> None:
 		self.level      += 1
-		self.xp_to_next = int(self.xp_to_next * 1.45)
+		self.xp_to_next = max(self.base_xp_to_next, int(self.xp_to_next * self.xp_growth_factor))
 
 	def upgrade_attribute(self, name: str) -> bool:
 		if name not in self.attribute_levels:

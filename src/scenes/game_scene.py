@@ -14,7 +14,7 @@ from src.system.hud import HUD
 from src.ui.damage_numbers import DamageNumbers
 from src.ui.pause_menu import PauseMenu
 from src.utils.services import GameServices
-from src.utils.window import get_screen
+from src.utils.window import get_screen, get_window
 from src.utils.window import load_image, create_surface, draw_rect, blit_surface, set_mouse_visible, scale_surface, draw_arc, draw_circle
 from src.utils.rect import Rect
 
@@ -141,10 +141,14 @@ class GameScene:
 						smooth=False
 					)
 
-		self.weapon_type = random.choice(["fire", "ice", "wind"])
+		self.weapon_type = "fire"
 		self.weapon_timer = 0.0
 		self.run_time: float = 0.0
 		self.weapon_slashes: list[Slash] = []
+		self._slash_arc_cache: dict[tuple[int, int, int, int, int, tuple[int, int, int], int], object] = {}
+		self.enemy_activity_margin_x = max(220.0, self.viewport_width * 0.45)
+		self.enemy_activity_margin_y = max(180.0, self.viewport_height * 0.45)
+		self.show_fps = False
 		self.swords = {
 			"fire": FireSword(),
 			"ice": IceSword(),
@@ -162,6 +166,9 @@ class GameScene:
 	def handle_events(self, input_manager: Input | None) -> None:
 		if input_manager is None:
 			return
+
+		if input_manager.keyboard.key_down("X"):
+			self.show_fps = not self.show_fps
 
 		if input_manager.keyboard.key_down("ESC"):
 			self.pause_menu.toggle()
@@ -195,6 +202,11 @@ class GameScene:
 		self._resolve_player_static_collisions()
 		self._handle_weapon_selection(input_manager)
 
+		player_center_x, player_center_y = self.player.center
+
+		self.camera.follow(player_center_x, player_center_y)
+		self._clamp_camera_to_world()
+
 		if self.player.is_dead():
 			if self.player.death_anim_time_left > 0.0:
 				return
@@ -207,8 +219,13 @@ class GameScene:
 			return
 
 		before_update = len(self.enemy_manager.get_enemies())
-		xp_gained = self.enemy_manager.update(self.player, dt)
+		xp_gained = self.enemy_manager.update(
+			self.player,
+			dt,
+			active_bounds=self._camera_world_bounds(self.enemy_activity_margin_x, self.enemy_activity_margin_y)
+		)
 		self._update_player_slashes(dt)
+
 		xp_gained += self.enemy_manager.collect_dead()
 		after_update = len(self.enemy_manager.get_enemies())
 
@@ -222,10 +239,6 @@ class GameScene:
 				if self._available_upgrade_attributes():
 					self.pending_level_ups += levels_gained
 					self._open_level_up()
-
-		player_center_x, player_center_y = self.player.center
-		self.camera.follow(player_center_x, player_center_y)
-		self._clamp_camera_to_world()
 
 		if after_update < before_update:
 			self.total_kills += before_update - after_update
@@ -241,7 +254,13 @@ class GameScene:
 		self.player.draw(camera_x=self.camera.x, camera_y=self.camera.y)
 		self._draw_player_slashes()
 		self.damage_numbers.draw(self.camera.x, self.camera.y)
-		self.hud.draw(self.player, self.total_kills, self.weapon_type, run_time=self.run_time)
+		self.hud.draw(
+			self.player,
+			self.total_kills,
+			self.weapon_type,
+			run_time=self.run_time,
+			fps_value=get_window().get_fps() if self.show_fps else None
+		)
 
 		if self.level_up_active and not is_paused:
 			self._draw_level_up_overlay()
@@ -333,7 +352,7 @@ class GameScene:
 		self.level_up_options = []
 		self.level_up_hover = None
 		self.player_dead = False
-		self.weapon_type = random.choice(["fire", "ice", "wind"])
+		self.weapon_type = "fire"
 		self.weapon_timer = 0.0
 		self.weapon_slashes = []
 
@@ -459,6 +478,10 @@ class GameScene:
 			if callable(damage_fn):
 				before_health = float(getattr(enemy, "health", 0.0))
 				damage_fn(slash.damage)
+
+				if slash.on_hit is not None:
+					slash.on_hit(enemy, player_strength, slash)
+
 				after_health = float(getattr(enemy, "health", before_health))
 				damage_done = max(1, int(round(before_health - after_health)))
 				enemy_center = getattr(enemy, "center", (slash.x, slash.y))
@@ -468,9 +491,6 @@ class GameScene:
 					float(enemy_center[1]) - float(getattr(enemy, "height", 0.0)) * 0.35,
 					(255, 235, 120),
 				)
-
-				if slash.on_hit is not None:
-					slash.on_hit(enemy, player_strength, slash)
 
 			slash.hit_ids.add(enemy_id)
 
@@ -501,24 +521,7 @@ class GameScene:
 			if alpha <= 0:
 				continue
 
-			center_angle = math.atan2(slash.dir_y, slash.dir_x)
-			arc_rad = math.radians(slash.arc_deg)
-			start_angle = center_angle - arc_rad * 0.5
-			end_angle = center_angle + arc_rad * 0.5
-			radius = slash.radius
-			pad = slash.line_width + 2
-			size = max(1, int(radius * 2 + pad * 2))
-
-			arc_surface = create_surface(size, size, alpha=True)
-			rect = (pad, pad, int(radius * 2), int(radius * 2))
-			draw_arc(
-				(*slash.color, alpha),
-				rect,
-				start_angle,
-				end_angle,
-				width=slash.line_width,
-				target=arc_surface
-			)
+			arc_surface, radius, pad = self._get_slash_arc_surface(slash, alpha)
 
 			blit_surface(
 				arc_surface,
@@ -529,12 +532,57 @@ class GameScene:
 				target=screen
 			)
 
+	def _get_slash_arc_surface(self, slash: Slash, alpha: int) -> tuple[object, float, int]:
+		center_angle_deg = int(round(math.degrees(math.atan2(slash.dir_y, slash.dir_x)))) % 360
+		arc_deg = int(round(slash.arc_deg))
+		radius = float(slash.radius)
+		pad = int(slash.line_width + 2)
+		alpha_bucket = max(0, min(255, int(round(alpha / 16.0) * 16)))
+		cache_key = (
+			center_angle_deg,
+			arc_deg,
+			int(round(radius)),
+			pad,
+			slash.line_width,
+			slash.color,
+			alpha_bucket
+		)
+
+		cached = self._slash_arc_cache.get(cache_key)
+		if cached is not None:
+			return cached, radius, pad
+
+		size = max(1, int(radius * 2 + pad * 2))
+		start_angle = math.radians(center_angle_deg - arc_deg * 0.5)
+		end_angle = math.radians(center_angle_deg + arc_deg * 0.5)
+
+		arc_surface = create_surface(size, size, alpha=True)
+		draw_arc(
+			(*slash.color, alpha_bucket),
+			(pad, pad, int(radius * 2), int(radius * 2)),
+			start_angle,
+			end_angle,
+			width=slash.line_width,
+			target=arc_surface
+		)
+		self._slash_arc_cache[cache_key] = arc_surface
+
+		return arc_surface, radius, pad
+
 	def _clamp_camera_to_world(self) -> None:
 		max_x = max(0.0, float(self.world_width - self.viewport_width))
 		max_y = max(0.0, float(self.world_height - self.viewport_height))
 
 		self.camera.x = max(0.0, min(self.camera.x, max_x))
 		self.camera.y = max(0.0, min(self.camera.y, max_y))
+
+	def _camera_world_bounds(self, margin_x: float = 0.0, margin_y: float = 0.0) -> Rect:
+		left = max(float(self.world.bounds.left), self.camera.x - margin_x)
+		top = max(float(self.world.bounds.top), self.camera.y - margin_y)
+		right = min(float(self.world.bounds.right), self.camera.x + self.viewport_width + margin_x)
+		bottom = min(float(self.world.bounds.bottom), self.camera.y + self.viewport_height + margin_y)
+
+		return Rect(left, top, max(1.0, right - left), max(1.0, bottom - top))
 
 	def _resolve_player_static_collisions(self) -> None:
 		if not self.world.static_colliders:

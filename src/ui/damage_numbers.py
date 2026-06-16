@@ -42,6 +42,9 @@ class DamageNumbers:
 			return
 
 		screen = get_screen()
+		screen_width = screen.get_width()
+		screen_height = screen.get_height()
+
 		for item in self.items:
 			text = str(item["text"])
 			color = item["color"]
@@ -57,6 +60,8 @@ class DamageNumbers:
 
 			x = int(float(item["x"]) - camera_x - surf.get_width() * 0.5)
 			y = int(float(item["y"]) - camera_y)
+			if x + surf.get_width() < 0 or x > screen_width or y + surf.get_height() < 0 or y > screen_height:
+				continue
 
 			screen.blit(shadow, (x + 1, y + 1))
 			screen.blit(surf, (x, y))

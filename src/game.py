@@ -82,14 +82,26 @@ class Game:
 
         sounds_dir = assets_dir / "sounds"
         slash_sounds = {
-            "fire_slash": sounds_dir / "fire_slash.ogg",
-            "ice_slash": sounds_dir / "ice_slash.ogg",
-            "wind_slash": sounds_dir / "wind_slash.ogg"
+            "fire_slash": {
+                "path": sounds_dir / "fire_slash.ogg",
+                "volume": 2.0
+            },
+            "ice_slash": {
+                "path": sounds_dir / "ice_slash.ogg",
+                "volume": 0.5
+            },
+            "wind_slash": {
+                "path": sounds_dir / "wind_slash.ogg",
+                "volume": 0.25
+            }
         }
 
-        for sound_key, sound_path in slash_sounds.items():
+        for sound_key, sound_config in slash_sounds.items():
+            sound_path = sound_config["path"]
+            sound_volume = float(sound_config["volume"])
+
             if sound_path.exists():
-                self.audio.load_sound(sound_key, str(sound_path), volume=1.0)
+                self.audio.load_sound(sound_key, str(sound_path), volume=sound_volume)
 
         self.input = Input()
         self.input.keyboard = self.window.keyboard

@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 import math
-import random
 from typing import Callable
 
 
@@ -168,27 +167,24 @@ class FireSword(Sword):
 	def __init__(self) -> None:
 		super().__init__(
 			name="fire",
-			base_damage=14,
-			cooldown=0.68,
+			base_damage=19,
+			cooldown=0.72,
 			radius=82.0,
 			duration=0.22,
 			color=(255, 140, 80),
 			attack_speed_mult=1.05,
 		)
 
-		self.burn_chance = 0.0025
-		self.burn_duration = 2.6
-		self.burn_strength_scale = 0.10
+		self.burn_duration = 2.4
+		self.burn_damage_ratio = 0.22
+		self.burn_strength_scale = 0.30
 
 	def on_hit(self, enemy: object, player_strength: int, slash: Slash) -> None:
 		apply_burn = getattr(enemy, "apply_burn", None)
 		if not callable(apply_burn):
 			return
 
-		if random.random() > self.burn_chance:
-			return
-
-		dps = int((slash.damage + (player_strength * self.burn_strength_scale)) / 2)
+		dps = int((slash.damage * self.burn_damage_ratio) + (player_strength * self.burn_strength_scale))
 		apply_burn(max(1, dps), self.burn_duration)
 
 
@@ -196,7 +192,7 @@ class IceSword(Sword):
 	def __init__(self) -> None:
 		super().__init__(
 			name="ice",
-			base_damage=16,
+			base_damage=20,
 			cooldown=0.78,
 			radius=96.0,
 			duration=0.24,
@@ -204,31 +200,47 @@ class IceSword(Sword):
 			attack_speed_mult=1.0,
 		)
 
-		self.slow_factor = 0.72
-		self.slow_duration = 1.4
+		self.slow_factor = 0.62
+		self.slow_duration = 1.6
+		self.combo_window = 1.35
+		self.combo_bonus_step = 4
+		self.combo_bonus_cap = 16
+		self.combo_strength_scale = 0.25
 		self.freeze_hits = 5
 		self.freeze_duration = 1.2
 
 	def on_hit(self, enemy: object, player_strength: int, slash: Slash) -> None:
+		combo_stacks = int(getattr(enemy, "ice_hits", 0))
+
 		apply_slow = getattr(enemy, "apply_slow", None)
 		if callable(apply_slow):
 			apply_slow(self.slow_factor, self.slow_duration)
 
+		if combo_stacks > 0:
+			extra_damage = min(
+				self.combo_bonus_cap,
+				int(combo_stacks * self.combo_bonus_step + player_strength * self.combo_strength_scale)
+			)
+			take_damage = getattr(enemy, "take_damage", None)
+			if callable(take_damage):
+				take_damage(max(1, extra_damage))
+
 		register_hit = getattr(enemy, "register_ice_hit", None)
 		if callable(register_hit):
-			register_hit(self.freeze_hits, self.freeze_duration)
+			register_hit(self.freeze_hits, self.freeze_duration, self.combo_window)
 
 
 class WindSword(Sword):
 	def __init__(self) -> None:
 		super().__init__(
 			name="wind",
-			base_damage=12,
-			cooldown=0.58,
+			base_damage=7,
+			cooldown=0.64,
 			radius=120.0,
 			duration=0.18,
 			color=(170, 240, 210),
-			hits_per_attack=3,
-			hit_delay=0.06,
-			attack_speed_mult=1.25,
+			strength_scale=1.25,
+			hits_per_attack=2,
+			hit_delay=0.07,
+			attack_speed_mult=1.15,
 		)

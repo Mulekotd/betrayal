@@ -104,13 +104,16 @@ class HUD:
         player:          object,
         total_kills:     int,
         selected_weapon: str | None = None,
-        run_time:        float = 0.0
+        run_time:        float = 0.0,
+        fps_value:       float | None = None
     ) -> None:
         self._draw_hp_bar(player)
         self._draw_xp_bar(player)
         self._draw_weapon_bar(selected_weapon)
         self._draw_timer(run_time)
         self._draw_kills_counter(total_kills)
+        if fps_value is not None:
+            self._draw_fps(fps_value)
 
     def pick_weapon(self, x: float, y: float) -> str | None:
         for key, rect in self._weapon_rects().items():
@@ -195,6 +198,23 @@ class HUD:
 
         screen.blit(shadow_surf, (tx + 1, ty + 1))
         screen.blit(text_surf, (tx, ty))
+
+    def _draw_fps(self, fps_value: float) -> None:
+        screen = get_screen()
+
+        if fps_value > 0.0:
+            label = f"FPS: {int(round(fps_value))}"
+        else:
+            label = "FPS: --"
+
+        text_surf = self.font_small.render(label, False, HUDColors.TIMER_TEXT)
+        shadow_surf = self.font_small.render(label, False, HUDColors.TIMER_SHADOW)
+
+        x = self.viewport_width - text_surf.get_width() - self.padding - 12
+        y = self.padding + 10
+
+        screen.blit(shadow_surf, (x + 1, y + 1))
+        screen.blit(text_surf, (x, y))
 
     def _draw_weapon_bar(self, selected_weapon: str | None) -> None:
         screen = get_screen()
