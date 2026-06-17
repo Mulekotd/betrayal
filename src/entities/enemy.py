@@ -17,6 +17,7 @@ class EnemyAction(Enum):
 	ATTACK_1 = "ATTACK_1"
 	ATTACK_2 = "ATTACK_2"
 	ATTACK_3 = "ATTACK_3"
+	DEATH = "DEATH"
 	GUARD = "GUARD"
 	HIT = "HIT"
 
@@ -61,6 +62,7 @@ class Enemy:
 		self.speed = base_speed
 		self.damage = base_damage
 		self.armor = self.base_armor
+		self.damage_multiplier = 1.0
 
 		self.base_radius = max(8.0, min(self.frame_width, self.frame_height) * 0.42)
 		self.radius = self.base_radius
@@ -75,14 +77,19 @@ class Enemy:
 		self.burn_timer = 0.0
 		self.freeze_timer = 0.0
 		self.ice_hits = 0
+		self.ice_freeze_hits = 0
 		self.ice_combo_timer = 0.0
 
 		self.hit_anim_time_left = 0.0
+		self.burn_damage_popups: list[tuple[int, float, float]] = []
+		self._burn_popup_accumulator = 0.0
+		self._burn_popup_timer = 0.0
 
 		self.idle_action = "IDLE" if "IDLE" in actions else (actions[0] if actions else "")
 		self.walk_action = "WALK" if "WALK" in actions else self.idle_action
 		self.facing_dir = 1
 		self.contact_damage = True
+		self.enemy_type = "enemy"
 		self._draw_cache: dict[tuple[str, int, bool, int, int], object] = {}
 		self._hit_mask_cache: dict[tuple[str, int, bool, int, int], object] = {}
 		self._freeze_mask_cache: dict[tuple[str, int, bool, int, int], object] = {}
@@ -95,14 +102,19 @@ class Enemy:
 		self.speed = self.base_speed * speed_multiplier
 		self.damage = self.base_damage
 		self.armor = self.base_armor
+		self.damage_multiplier = 1.0
 		self.slow_factor = 1.0
 		self.slow_timer = 0.0
 		self.burn_dps = 0.0
 		self.burn_timer = 0.0
 		self.freeze_timer = 0.0
 		self.ice_hits = 0
+		self.ice_freeze_hits = 0
 		self.ice_combo_timer = 0.0
 		self.hit_anim_time_left = 0.0
+		self.burn_damage_popups.clear()
+		self._burn_popup_accumulator = 0.0
+		self._burn_popup_timer = 0.0
 		self.set_scale(self.scale_multiplier)
 		self._set_state(EnemyAction.IDLE)
 
@@ -129,6 +141,10 @@ class Enemy:
 	def move_by(self, dx: float, dy: float) -> None:
 		self.x += dx
 		self.y += dy
+
+	def set_damage_multiplier(self, multiplier: float) -> None:
+		self.damage_multiplier = max(0.1, float(multiplier))
+		self.damage = max(1, int(round(self.base_damage * self.damage_multiplier)))
 
 	def update_towards(
 		self,
@@ -215,8 +231,16 @@ class Enemy:
 			self.hit_anim_time_left = hit_duration
 			self._set_state(EnemyAction.HIT)
 
-	def apply_burn(self, dps: float, duration: float) -> None:
-		self.burn_dps = max(self.burn_dps, dps)
+	def apply_burn(self, dps: float, duration: float, stack_cap: int = 1) -> None:
+		dps = max(0.0, float(dps))
+		stack_cap = max(1, int(stack_cap))
+
+		if self.burn_timer <= 0.0:
+			self.burn_dps = dps
+		else:
+			max_burn_dps = max(self.burn_dps, dps * stack_cap)
+			self.burn_dps = min(max_burn_dps, self.burn_dps + dps)
+
 		self.burn_timer = max(self.burn_timer, duration)
 
 	def apply_slow(self, slow_factor: float, duration: float) -> None:
@@ -228,19 +252,24 @@ class Enemy:
 			self.ice_hits = 0
 
 		self.ice_hits += 1
+		self.ice_freeze_hits += 1
 		self.ice_combo_timer = max(self.ice_combo_timer, combo_window)
 
-		if self.ice_hits >= freeze_hits:
+		if self.ice_freeze_hits >= freeze_hits:
+			self.ice_freeze_hits = 0
 			self.ice_hits = 0
 			self.ice_combo_timer = 0.0
 			self.freeze_timer = max(self.freeze_timer, freeze_duration)
 
 	def _update_statuses(self, dt: float) -> None:
 		if self.burn_timer > 0.0:
+			before_health = float(self.health)
 			self.burn_timer = max(0.0, self.burn_timer - dt)
 			self.health -= self.burn_dps * dt
+			self._record_burn_damage(before_health - float(self.health), dt)
 
 			if self.burn_timer <= 0.0:
+				self._flush_burn_popup()
 				self.burn_dps = 0.0
 
 		if self.slow_timer > 0.0:
@@ -259,6 +288,31 @@ class Enemy:
 
 		if self.hit_anim_time_left > 0.0:
 			self.hit_anim_time_left = max(0.0, self.hit_anim_time_left - dt)
+
+	def _record_burn_damage(self, amount: float, dt: float) -> None:
+		if amount <= 0.0:
+			return
+
+		self._burn_popup_accumulator += amount
+		self._burn_popup_timer += dt
+
+		if self._burn_popup_accumulator >= 1.0 and self._burn_popup_timer >= 0.3:
+			self._flush_burn_popup()
+
+	def _flush_burn_popup(self) -> None:
+		if self._burn_popup_accumulator < 0.5:
+			self._burn_popup_accumulator = 0.0
+			self._burn_popup_timer = 0.0
+			return
+
+		center_x, center_y = self.center
+		self.burn_damage_popups.append((
+			max(1, int(round(self._burn_popup_accumulator))),
+			float(center_x),
+			float(center_y) - float(self.height) * 0.35
+		))
+		self._burn_popup_accumulator = 0.0
+		self._burn_popup_timer = 0.0
 
 	def is_dead(self) -> bool:
 		return self.health <= 0
@@ -326,13 +380,13 @@ class Soldier(Enemy):
 		is_ranged: bool,
 		base_health: int = 60,
 		base_speed: float = 120.0,
-		base_damage: int = 8,
+		base_damage: int = 16,
 		xp_value: int = 8
 	) -> None:
 		if is_ranged:
 			base_health = 35
 			base_speed = 145.0
-			base_damage = 22
+			base_damage = 38
 			xp_value = 10
 
 		armor = 0.05 if is_ranged else 0.20
@@ -352,6 +406,7 @@ class Soldier(Enemy):
 		)
 
 		self.is_ranged = is_ranged
+		self.enemy_type = "archer" if is_ranged else "soldier"
 		self.base_scale = 1.5
 		self.set_scale(1.0)
 		self.attack_timer = 0.0
@@ -390,6 +445,9 @@ class Soldier(Enemy):
 
 		self.attack_timer = max(0.0, self.attack_timer - dt * self.slow_factor)
 		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
+
+		if self.health <= 0:
+			return
 
 		if self.freeze_timer > 0.0:
 			self._set_state(EnemyAction.IDLE)
@@ -548,7 +606,7 @@ class Knight(Enemy):
 		sprite_path: str | Path,
 		base_health: int = 100,
 		base_speed: float = 80.0,
-		base_damage: int = 15,
+		base_damage: int = 28,
 		xp_value: int = 15
 	) -> None:
 		super().__init__(
@@ -564,6 +622,7 @@ class Knight(Enemy):
 			xp_value = xp_value,
 			armor = 0.35
 		)
+		self.enemy_type = "knight"
 		self.base_scale = 1.5
 		self.set_scale(1.0)
 		self.attack_timer = 0.0
@@ -618,6 +677,9 @@ class Knight(Enemy):
 		self.animation.update(int(dt * 1000))
 		self.attack_timer = max(0.0, self.attack_timer - dt * self.slow_factor)
 		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
+
+		if self.health <= 0:
+			return
 
 		if self.guard_timer > 0.0:
 			self.guard_timer = max(0.0, self.guard_timer - dt)
@@ -794,6 +856,9 @@ class EnemyManager:
 		self.base_spawn_rate = base_spawn_rate
 		self.spawn_growth = spawn_growth
 		self.max_spawn_rate = max_spawn_rate
+		self.spawn_rate_multiplier = 1.0
+		self.damage_bonus_per_minute = 0.10
+		self.damage_bonus_per_ten_player_levels = 0.08
 		self.max_active_enemies = max(20, int(max_active_enemies))
 		self._frame_index = 0
 		self.sprite_scale = 2.0
@@ -808,6 +873,8 @@ class EnemyManager:
 		self.elapsed_time += dt
 		target_x, target_y = getattr(player, "center", (self.world_width * 0.5, self.world_height * 0.5))
 		self._spawn_by_budget(dt, target_x=target_x, target_y=target_y)
+		damage_multiplier = self.current_damage_multiplier(player)
+		self._apply_damage_multiplier(damage_multiplier)
 
 		simulated_enemies: list[Enemy] = []
 		for enemy in self.active:
@@ -881,6 +948,9 @@ class EnemyManager:
 		self.world_width = max(1, int(getattr(bounds, 'right', self.world_width)))
 		self.world_height = max(1, int(getattr(bounds, 'bottom', self.world_height)))
 
+	def set_spawn_rate_multiplier(self, multiplier: float) -> None:
+		self.spawn_rate_multiplier = max(0.0, float(multiplier))
+
 	def set_scale(self, scale: float) -> None:
 		self.sprite_scale = max(0.1, scale)
 
@@ -911,8 +981,28 @@ class EnemyManager:
 			spawned_this_frame += 1
 
 	def current_spawn_rate(self) -> float:
-		rate = self.base_spawn_rate * math.exp(self.spawn_growth * self.elapsed_time)
+		rate = self.base_spawn_rate * math.exp(self.spawn_growth * self.elapsed_time) * self.spawn_rate_multiplier
 		return min(self.max_spawn_rate, rate)
+
+	def current_damage_multiplier(self, player: object | None = None) -> float:
+		time_steps = int(self.elapsed_time // 60.0)
+		player_level = int(getattr(player, "level", 1)) if player is not None else 1
+		level_steps = max(0, player_level // 10)
+
+		return 1.0 + time_steps * self.damage_bonus_per_minute + level_steps * self.damage_bonus_per_ten_player_levels
+
+	def _apply_damage_multiplier(self, multiplier: float) -> None:
+		for enemy in self.active:
+			enemy.set_damage_multiplier(multiplier)
+
+	def sample_spawn_position(self, enemy: Enemy, target_x: float, target_y: float) -> tuple[float, float]:
+		return self._pick_spawn_position(enemy, target_x=target_x, target_y=target_y)
+
+	def resolve_static_collisions_for(self, enemy: Enemy) -> None:
+		self._resolve_enemy_static_collisions(enemy)
+
+	def clamp_to_world(self, enemy: Enemy) -> None:
+		self._clamp_enemy_to_world(enemy)
 
 	def _spawn_enemy(self, target_x: float, target_y: float) -> None:
 		enemy = self.pool.pop() if self.pool else self._create_enemy()
@@ -1197,7 +1287,9 @@ class EnemyManager:
 			speed=260.0,
 			damage=damage,
 			radius=self.arrow_radius,
-			life_left=3.0
+			life_left=3.0,
+			armor_pierce=0.68,
+			bonus_vs_defense=0.75
 		)
 		self.arrows.append(arrow)
 
@@ -1248,7 +1340,11 @@ class EnemyManager:
 			if dist_sq <= min_dist * min_dist:
 				damage_fn = getattr(player, "take_damage", None)
 				if callable(damage_fn):
-					damage_fn(arrow.damage)
+					damage_fn(
+						arrow.damage,
+						defense_pierce=float(getattr(arrow, "armor_pierce", 0.0)),
+						bonus_vs_defense=float(getattr(arrow, "bonus_vs_defense", 0.0))
+					)
 
 				continue
 

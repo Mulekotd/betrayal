@@ -14,6 +14,8 @@ class Arrow:
 	damage: int
 	radius: float
 	life_left: float
+	armor_pierce: float = 0.0
+	bonus_vs_defense: float = 0.0
 
 	def update(self, dt: float) -> None:
 		self.x += self.vel_x * self.speed * dt
@@ -35,6 +37,7 @@ class Slash:
 		color: tuple[int, int, int],
 		line_width: int = 6,
 		delay: float = 0.0,
+		shape: str = "arc",
 		on_hit: Callable[[object, int, "Slash"], None] | None = None,
 	) -> None:
 		self.x = x
@@ -47,6 +50,7 @@ class Slash:
 		self.duration = duration
 		self.color = color
 		self.line_width = max(1, int(line_width))
+		self.shape = shape
 		self.on_hit = on_hit
 		self.life_left = max(0.0, duration)
 		self.delay_left = max(0.0, delay)
@@ -89,6 +93,8 @@ class Sword(Slash):
 		hits_per_attack: int = 1,
 		hit_delay: float = 0.06,
 		attack_speed_mult: float = 1.0,
+		move_speed_mult: float = 1.0,
+		shape: str = "arc",
 	) -> None:
 		super().__init__(
 			x=0.0,
@@ -101,6 +107,7 @@ class Sword(Slash):
 			duration=0.0,
 			color=color,
 			line_width=line_width,
+			shape=shape,
 		)
 
 		self.name = name
@@ -116,10 +123,15 @@ class Sword(Slash):
 		self.hits_per_attack = max(1, hits_per_attack)
 		self.hit_delay = max(0.0, hit_delay)
 		self.attack_speed_mult = max(0.1, attack_speed_mult)
+		self.move_speed_mult = max(0.1, move_speed_mult)
+		self.shape = shape
 
 	def get_cooldown(self, attack_speed: float) -> float:
 		attack_speed = max(0.1, attack_speed)
 		return max(0.05, self.cooldown / attack_speed / self.attack_speed_mult)
+
+	def get_move_speed_multiplier(self) -> float:
+		return self.move_speed_mult
 
 	def compute_damage(self, strength: int) -> int:
 		return max(1, int(self.base_damage + strength * self.strength_scale))
@@ -135,8 +147,12 @@ class Sword(Slash):
 
 		center = getattr(player, "center", (0.0, 0.0))
 		radius = float(getattr(player, "radius", 0.0))
-		origin_x = center[0] + dir_x * (radius + self.forward_offset)
-		origin_y = center[1] + dir_y * (radius + self.forward_offset)
+		if self.shape == "circle":
+			origin_x = center[0]
+			origin_y = center[1]
+		else:
+			origin_x = center[0] + dir_x * (radius + self.forward_offset)
+			origin_y = center[1] + dir_y * (radius + self.forward_offset)
 
 		strength = int(getattr(player, "attributes", {}).get("strength", 1))
 		damage = self.compute_damage(strength)
@@ -154,6 +170,7 @@ class Sword(Slash):
 				color=self.color,
 				line_width=self.line_width,
 				delay=index * self.hit_delay,
+				shape=self.shape,
 				on_hit=self.on_hit,
 			)
 			for index in range(self.hits_per_attack)
@@ -175,17 +192,26 @@ class FireSword(Sword):
 			attack_speed_mult=1.05,
 		)
 
-		self.burn_duration = 2.4
-		self.burn_damage_ratio = 0.22
-		self.burn_strength_scale = 0.30
+		self.burn_duration = 2.8
+		self.burn_damage_ratio = 0.24
+		self.burn_strength_scale = 0.28
+		self.burn_stacks = 5
+		self.knight_bonus_ratio = 0.55
 
 	def on_hit(self, enemy: object, player_strength: int, slash: Slash) -> None:
+		enemy_type = str(getattr(enemy, "enemy_type", ""))
 		apply_burn = getattr(enemy, "apply_burn", None)
 		if not callable(apply_burn):
 			return
 
 		dps = int((slash.damage * self.burn_damage_ratio) + (player_strength * self.burn_strength_scale))
-		apply_burn(max(1, dps), self.burn_duration)
+		apply_burn(max(1, dps), self.burn_duration, self.burn_stacks)
+
+		if enemy_type == "knight":
+			take_damage = getattr(enemy, "take_damage", None)
+			if callable(take_damage):
+				bonus_damage = max(6, int(round(slash.damage * self.knight_bonus_ratio)))
+				take_damage(bonus_damage)
 
 
 class IceSword(Sword):
@@ -201,20 +227,27 @@ class IceSword(Sword):
 		)
 
 		self.slow_factor = 0.62
-		self.slow_duration = 1.6
-		self.combo_window = 1.35
-		self.combo_bonus_step = 4
-		self.combo_bonus_cap = 16
+		self.slow_duration = 1.9
+		self.combo_window = 1.8
+		self.combo_bonus_step = 5
+		self.combo_bonus_cap = 20
 		self.combo_strength_scale = 0.25
-		self.freeze_hits = 5
-		self.freeze_duration = 1.2
+		self.freeze_hits = 2
+		self.freeze_duration = 1.0
 
 	def on_hit(self, enemy: object, player_strength: int, slash: Slash) -> None:
 		combo_stacks = int(getattr(enemy, "ice_hits", 0))
+		enemy_type = str(getattr(enemy, "enemy_type", ""))
 
 		apply_slow = getattr(enemy, "apply_slow", None)
 		if callable(apply_slow):
 			apply_slow(self.slow_factor, self.slow_duration)
+
+		register_hit = getattr(enemy, "register_ice_hit", None)
+		if enemy_type == "archer":
+			if callable(register_hit):
+				register_hit(1, self.freeze_duration + 0.4, 0.0)
+			return
 
 		if combo_stacks > 0:
 			extra_damage = min(
@@ -222,10 +255,9 @@ class IceSword(Sword):
 				int(combo_stacks * self.combo_bonus_step + player_strength * self.combo_strength_scale)
 			)
 			take_damage = getattr(enemy, "take_damage", None)
-			if callable(take_damage):
+			if callable(take_damage) and extra_damage > 0:
 				take_damage(max(1, extra_damage))
 
-		register_hit = getattr(enemy, "register_ice_hit", None)
 		if callable(register_hit):
 			register_hit(self.freeze_hits, self.freeze_duration, self.combo_window)
 
@@ -243,4 +275,6 @@ class WindSword(Sword):
 			hits_per_attack=2,
 			hit_delay=0.07,
 			attack_speed_mult=1.15,
+			move_speed_mult=1.12,
+			shape="circle",
 		)

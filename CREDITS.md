@@ -6,6 +6,8 @@
 
 [PixiVan](https://pixivan.itch.io/) # Knight
 [SventHole](https://sventhole.itch.io/) # Player
+[Polygonix](https://polygonix.itch.io/) # Armor
+[LuizMelo](https://luizmelo.itch.io/) # King
 
 ### Sound Effects
 

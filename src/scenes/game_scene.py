@@ -6,6 +6,7 @@ import random
 
 from src.engine.camera import Camera
 from src.engine.world import World
+from src.entities.boss import Boss
 from src.entities.enemy import EnemyManager
 from src.entities.player import Player
 from src.entities.weapon import Slash, FireSword, IceSword, WindSword
@@ -122,10 +123,11 @@ class GameScene:
 		self.level_up_icons: dict[str, object] = {}
 		upgrade_dir = self.services.images_dir / "upgrades"
 		upgrade_icon_files = {
-			"max_health":   "extravida.png",
-			"health_regen": "regenvida.png",
-			"move_speed":   "movespeed.png",
-			"attack_speed": "attackspeed.png",
+			"max_health":   "health_up.png",
+			"defense":      "armor.png",
+			"health_regen": "regen.png",
+			"move_speed":   "move_speed.png",
+			"attack_speed": "attack_speed.png",
 			"strength":     "strength.png"
 		}
 
@@ -146,6 +148,7 @@ class GameScene:
 		self.run_time: float = 0.0
 		self.weapon_slashes: list[Slash] = []
 		self._slash_arc_cache: dict[tuple[int, int, int, int, int, tuple[int, int, int], int], object] = {}
+		self._slash_circle_cache: dict[tuple[int, int, tuple[int, int, int], int], object] = {}
 		self.enemy_activity_margin_x = max(220.0, self.viewport_width * 0.45)
 		self.enemy_activity_margin_y = max(180.0, self.viewport_height * 0.45)
 		self.show_fps = False
@@ -154,6 +157,13 @@ class GameScene:
 			"ice": IceSword(),
 			"wind": WindSword()
 		}
+		self.boss: Boss | None = None
+		self.boss_spawned = False
+		self.boss_spawn_time = 600.0
+		self.boss_slashes: list[Slash] = []
+		self.boss_spawn_rate_multiplier = 0.42
+		self.victory_active = False
+		self.victory_hover: int | None = None
 
 		self.player_dead = False
 		self.game_over_title_font = self.services.fonts.get(68)
@@ -170,11 +180,18 @@ class GameScene:
 		if input_manager.keyboard.key_down("X"):
 			self.show_fps = not self.show_fps
 
+		if self.victory_active:
+			return
+
 		if input_manager.keyboard.key_down("ESC"):
 			self.pause_menu.toggle()
 
 	def update(self, dt: float, input_manager: Input | None) -> None:
 		if input_manager is None:
+			return
+
+		if self.victory_active:
+			self._update_victory(input_manager)
 			return
 
 		if self._is_game_paused():
@@ -190,17 +207,18 @@ class GameScene:
 			self._update_level_up(input_manager)
 			return
 
+		self._handle_weapon_selection(input_manager)
 		self.player.update(
 			input_manager,
 			dt,
 			self.world_width,
 			self.world_height,
-			world_bounds=self.world.bounds
+			world_bounds=self.world.bounds,
+			move_speed_multiplier=self._current_move_speed_multiplier(),
 		)
 
 		self.run_time += dt
 		self._resolve_player_static_collisions()
-		self._handle_weapon_selection(input_manager)
 
 		player_center_x, player_center_y = self.player.center
 
@@ -218,18 +236,27 @@ class GameScene:
 			self.pending_level_ups = 0
 			return
 
-		before_update = len(self.enemy_manager.get_enemies())
+		self._spawn_boss_if_ready()
+
+		self.enemy_manager.set_spawn_rate_multiplier(
+			self.boss_spawn_rate_multiplier if self._is_boss_active() else 1.0
+		)
+
+		before_update = len(self.enemy_manager.get_enemies()) + (1 if self._is_boss_active() else 0)
 		xp_gained = self.enemy_manager.update(
 			self.player,
 			dt,
 			active_bounds=self._camera_world_bounds(self.enemy_activity_margin_x, self.enemy_activity_margin_y)
 		)
+		xp_gained += self._update_boss(dt)
 		self._update_player_slashes(dt)
+		self._update_boss_slashes(dt)
 
 		xp_gained += self.enemy_manager.collect_dead()
-		after_update = len(self.enemy_manager.get_enemies())
+		after_update = len(self.enemy_manager.get_enemies()) + (1 if self._is_boss_active() else 0)
 
 		self.player.resolve_enemy_collisions(self._near_player_enemies(90.0))
+		self._drain_enemy_damage_popups()
 		self._drain_player_damage_popups()
 		self.damage_numbers.update(dt)
 
@@ -248,9 +275,12 @@ class GameScene:
 		self.world.draw(camera_x=self.camera.x, camera_y=self.camera.y)
 
 		is_paused = self._is_game_paused()
-		set_mouse_visible(self.level_up_active or is_paused)
+		set_mouse_visible(self.level_up_active or is_paused or self.victory_active)
 
 		self.enemy_manager.draw(camera_x=self.camera.x, camera_y=self.camera.y)
+		if self.boss is not None:
+			self.boss.draw(camera_x=self.camera.x, camera_y=self.camera.y)
+		self._draw_slashes(self.boss_slashes)
 		self.player.draw(camera_x=self.camera.x, camera_y=self.camera.y)
 		self._draw_player_slashes()
 		self.damage_numbers.draw(self.camera.x, self.camera.y)
@@ -267,6 +297,8 @@ class GameScene:
 
 		if self.player_dead:
 			self._draw_game_over_overlay()
+		elif self.victory_active:
+			self._draw_victory_overlay()
 
 		self.pause_menu.draw()
 
@@ -355,9 +387,18 @@ class GameScene:
 		self.weapon_type = "fire"
 		self.weapon_timer = 0.0
 		self.weapon_slashes = []
+		self.boss = None
+		self.boss_spawned = False
+		self.boss_slashes = []
+		self.victory_active = False
+		self.victory_hover = None
 
 		self.camera.follow(*self.player.center)
 		self._clamp_camera_to_world()
+
+	def _start_new_run(self) -> None:
+		self._restart_run()
+		self.run_time = 0.0
 
 	def _draw_game_over_overlay(self) -> None:
 		screen = get_screen()
@@ -376,6 +417,72 @@ class GameScene:
 		hint_y = title_y + title_surface.get_height() + 18
 		screen.blit(hint_surface, (hint_x, hint_y))
 
+	def _activate_victory(self) -> None:
+		self.victory_active = True
+		self.victory_hover = None
+		self.boss_slashes = []
+		self.level_up_active = False
+		self.level_up_options = []
+		self.level_up_hover = None
+		self.pending_level_ups = 0
+		self.pause_menu.close()
+
+	def _victory_buttons(self) -> list[tuple[str, Rect, object]]:
+		button_w = 250
+		button_h = 56
+		gap = 18
+		total_w = button_w * 2 + gap
+		start_x = (self.viewport_width - total_w) // 2
+		y = int(self.viewport_height * 0.58)
+
+		return [
+			("RESTART", Rect(start_x, y, button_w, button_h), self._start_new_run),
+			("MENU", Rect(start_x + button_w + gap, y, button_w, button_h), self._quit_to_menu),
+		]
+
+	def _update_victory(self, input_manager: Input) -> None:
+		mouse = input_manager.mouse
+		mx, my = mouse.get_position()
+		self.victory_hover = None
+
+		for index, (_, rect, action) in enumerate(self._victory_buttons()):
+			if rect.left <= mx <= rect.right and rect.top <= my <= rect.bottom:
+				self.victory_hover = index
+				if mouse.button_down(mouse.LEFT):
+					action()
+				return
+
+	def _draw_victory_overlay(self) -> None:
+		screen = get_screen()
+		overlay = create_surface(self.viewport_width, self.viewport_height, alpha=True)
+		overlay.fill((0, 0, 0, 185))
+		blit_surface(overlay, (0, 0), target=screen)
+
+		title_surface = self.game_over_title_font.render("CONGRATULATIONS", True, (245, 220, 120))
+		subtitle_surface = self.ui_font_medium.render("You defeated the boss", False, (235, 235, 225))
+		title_x = (self.viewport_width - title_surface.get_width()) // 2
+		title_y = int(self.viewport_height * 0.28)
+		subtitle_x = (self.viewport_width - subtitle_surface.get_width()) // 2
+		subtitle_y = title_y + title_surface.get_height() + 20
+		screen.blit(title_surface, (title_x, title_y))
+		screen.blit(subtitle_surface, (subtitle_x, subtitle_y))
+
+		for index, (label, rect, _) in enumerate(self._victory_buttons()):
+			hover = index == self.victory_hover
+			fill = (48, 58, 42) if hover else (28, 34, 28)
+			border = (245, 220, 120) if hover else (120, 135, 110)
+			draw_rect(fill, rect, border_radius=10, target=screen)
+			draw_rect(border, rect, width=2, border_radius=10, target=screen)
+
+			text = self.pause_menu.button_font.render(label, False, (245, 245, 235))
+			screen.blit(
+				text,
+				(
+					rect.centerx - text.get_width() // 2,
+					rect.centery - text.get_height() // 2
+				)
+			)
+
 	def _handle_weapon_selection(self, input_manager: Input) -> None:
 		keyboard = input_manager.keyboard
 		mouse = input_manager.mouse
@@ -393,8 +500,64 @@ class GameScene:
 			if picked is not None:
 				self.weapon_type = picked
 
+	def _current_sword(self):
+		return self.swords.get(self.weapon_type)
+
+	def _current_move_speed_multiplier(self) -> float:
+		sword = self._current_sword()
+		if sword is None:
+			return 1.0
+
+		return float(getattr(sword, "get_move_speed_multiplier", lambda: 1.0)())
+
+	def _is_boss_active(self) -> bool:
+		return self.boss is not None and not self.boss.is_dead()
+
+	def _spawn_boss_if_ready(self) -> None:
+		if self.boss_spawned or self.run_time < self.boss_spawn_time:
+			return
+
+		boss = Boss(self.services.images_dir / "boss_spritesheet.png")
+		spawn_x, spawn_y = self.enemy_manager.sample_spawn_position(
+			boss,
+			target_x=float(self.player.center[0]),
+			target_y=float(self.player.center[1])
+		)
+		boss.spawn(spawn_x, spawn_y)
+		self.boss = boss
+		self.boss_spawned = True
+
+	def _update_boss(self, dt: float) -> int:
+		if self.boss is None:
+			return 0
+
+		self.boss.set_damage_multiplier(self.enemy_manager.current_damage_multiplier(self.player))
+		player_x, player_y = self.player.center
+		self.boss.update_towards(
+			player_x,
+			player_y,
+			dt,
+			player=self.player,
+			spawn_slash=self._spawn_boss_slash
+		)
+		self.enemy_manager.resolve_static_collisions_for(self.boss)
+		self.enemy_manager.clamp_to_world(self.boss)
+
+		if not self.boss.is_dead():
+			return 0
+
+		xp_reward = int(getattr(self.boss, "xp_value", 0))
+		self._spawn_enemy_burn_popups(self.boss)
+		self.boss = None
+		self.boss_slashes = []
+		self._activate_victory()
+		return xp_reward
+
+	def _spawn_boss_slash(self, slash: Slash) -> None:
+		self.boss_slashes.append(slash)
+
 	def _update_player_slashes(self, dt: float) -> None:
-		sword = self.swords.get(self.weapon_type)
+		sword = self._current_sword()
 
 		if sword is None:
 			return
@@ -440,7 +603,31 @@ class GameScene:
 			if dx * dx + dy * dy <= radius * radius:
 				result.append(enemy)
 
+		if self._is_boss_active():
+			boss_center = getattr(self.boss, "center", None)
+			if boss_center is not None:
+				radius = player_radius + float(getattr(self.boss, "radius", 0.0)) + extra_radius
+				dx = boss_center[0] - px
+				dy = boss_center[1] - py
+				if dx * dx + dy * dy <= radius * radius:
+					result.append(self.boss)
+
 		return result
+
+	def _update_boss_slashes(self, dt: float) -> None:
+		if not self.boss_slashes or self.player.is_dead():
+			self.boss_slashes = [slash for slash in self.boss_slashes if slash.is_alive()]
+			return
+
+		for slash in self.boss_slashes:
+			slash.update(dt)
+
+			if not slash.is_active():
+				continue
+
+			self._apply_slash_to_player(slash)
+
+		self.boss_slashes = [slash for slash in self.boss_slashes if slash.is_alive()]
 
 	def _apply_slash_damage(self, slash: Slash, enemies: list[object], player_strength: int) -> None:
 		if not slash.is_active():
@@ -468,11 +655,12 @@ class GameScene:
 			if dist_sq > hit_range * hit_range:
 				continue
 
-			enemy_angle = math.atan2(dy, dx)
-			slash_angle = math.atan2(slash.dir_y, slash.dir_x)
-			angle_diff = (enemy_angle - slash_angle + math.pi) % (2 * math.pi) - math.pi
-			if abs(angle_diff) > math.radians(slash.arc_deg * 0.5):
-				continue
+			if slash.shape != "circle":
+				enemy_angle = math.atan2(dy, dx)
+				slash_angle = math.atan2(slash.dir_y, slash.dir_x)
+				angle_diff = (enemy_angle - slash_angle + math.pi) % (2 * math.pi) - math.pi
+				if abs(angle_diff) > math.radians(slash.arc_deg * 0.5):
+					continue
 
 			damage_fn = getattr(enemy, "take_damage", None)
 			if callable(damage_fn):
@@ -494,6 +682,38 @@ class GameScene:
 
 			slash.hit_ids.add(enemy_id)
 
+	def _apply_slash_to_player(self, slash: Slash) -> None:
+		if not slash.is_active() or self.player.is_dead():
+			return
+
+		player_id = id(self.player)
+		if player_id in slash.hit_ids:
+			return
+
+		player_center = self.player.center
+		player_radius = float(getattr(self.player, "radius", 0.0))
+		dx = player_center[0] - slash.x
+		dy = player_center[1] - slash.y
+		dist_sq = dx * dx + dy * dy
+
+		hit_range = slash.radius + player_radius * 0.5
+		if dist_sq > hit_range * hit_range:
+			return
+
+		if slash.shape != "circle":
+			player_angle = math.atan2(dy, dx)
+			slash_angle = math.atan2(slash.dir_y, slash.dir_x)
+			angle_diff = (player_angle - slash_angle + math.pi) % (2 * math.pi) - math.pi
+			if abs(angle_diff) > math.radians(slash.arc_deg * 0.5):
+				return
+
+		took_damage = self.player.take_damage(slash.damage)
+		if took_damage and slash.on_hit is not None:
+			slash.on_hit(self.player, 0, slash)
+
+		if took_damage:
+			slash.hit_ids.add(player_id)
+
 	def _spawn_damage_number(self, amount: int, x: float, y: float, color: tuple[int, int, int]) -> None:
 		self.damage_numbers.spawn(amount, x, y, color)
 
@@ -507,13 +727,33 @@ class GameScene:
 
 		popups.clear()
 
+	def _drain_enemy_damage_popups(self) -> None:
+		for enemy in self.enemy_manager.get_enemies():
+			self._spawn_enemy_burn_popups(enemy)
+
+		if self.boss is not None:
+			self._spawn_enemy_burn_popups(self.boss)
+
+	def _spawn_enemy_burn_popups(self, enemy: object) -> None:
+		popups = getattr(enemy, "burn_damage_popups", None)
+		if not popups:
+			return
+
+		for amount, x, y in popups:
+			self._spawn_damage_number(int(amount), float(x), float(y), (255, 150, 80))
+
+		popups.clear()
+
 	def _draw_player_slashes(self) -> None:
-		if not self.weapon_slashes:
+		self._draw_slashes(self.weapon_slashes)
+
+	def _draw_slashes(self, slashes: list[Slash]) -> None:
+		if not slashes:
 			return
 
 		screen = get_screen()
 
-		for slash in self.weapon_slashes:
+		for slash in slashes:
 			if not slash.is_active():
 				continue
 
@@ -521,7 +761,10 @@ class GameScene:
 			if alpha <= 0:
 				continue
 
-			arc_surface, radius, pad = self._get_slash_arc_surface(slash, alpha)
+			if slash.shape == "circle":
+				arc_surface, radius, pad = self._get_slash_circle_surface(slash, alpha)
+			else:
+				arc_surface, radius, pad = self._get_slash_arc_surface(slash, alpha)
 
 			blit_surface(
 				arc_surface,
@@ -568,6 +811,34 @@ class GameScene:
 		self._slash_arc_cache[cache_key] = arc_surface
 
 		return arc_surface, radius, pad
+
+	def _get_slash_circle_surface(self, slash: Slash, alpha: int) -> tuple[object, float, int]:
+		radius = float(slash.radius)
+		pad = int(slash.line_width + 2)
+		alpha_bucket = max(0, min(255, int(round(alpha / 16.0) * 16)))
+		cache_key = (
+			int(round(radius)),
+			slash.line_width,
+			slash.color,
+			alpha_bucket
+		)
+
+		cached = self._slash_circle_cache.get(cache_key)
+		if cached is not None:
+			return cached, radius, pad
+
+		size = max(1, int(radius * 2 + pad * 2))
+		circle_surface = create_surface(size, size, alpha=True)
+		draw_circle(
+			(*slash.color, alpha_bucket),
+			(radius + pad, radius + pad),
+			int(radius),
+			width=slash.line_width,
+			target=circle_surface
+		)
+		self._slash_circle_cache[cache_key] = circle_surface
+
+		return circle_surface, radius, pad
 
 	def _clamp_camera_to_world(self) -> None:
 		max_x = max(0.0, float(self.world_width - self.viewport_width))
@@ -773,7 +1044,7 @@ class GameScene:
 		icon_map = {
 			"max_health":   self.level_up_icons.get("max_health", self.level_up_icon),
 			"health_regen": self.level_up_icons.get("health_regen", self.level_up_icon),
-			"defense":      self.level_up_icon,
+			"defense":      self.level_up_icons.get("defense", self.level_up_icon),
 			"strength":     self.level_up_icons.get("strength", self.level_up_icon),
 			"move_speed":   self.level_up_icons.get("move_speed", self.level_up_icon),
 			"attack_speed": self.level_up_icons.get("attack_speed", self.level_up_icon)
