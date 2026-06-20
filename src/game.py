@@ -8,6 +8,7 @@ from external.pplay.window import Window
 from src.system.audio import Audio
 from src.system.input import Input
 from src.utils.services import GameServices
+from src.utils.window import blit_surface, enable_custom_cursor, get_screen, is_mouse_visible, load_image
 
 
 class SceneContract(Protocol):
@@ -43,6 +44,8 @@ class Game:
         self.running = False
         self.current_scene: SceneContract | None = None
         self.services: GameServices | None = None
+        self.cursor_surface = None
+        self.cursor_hotspot = (0, 0)
 
     def initialize(self, native_width: int | None = None, native_height: int | None = None) -> None:
         self.window = Window(self.width, self.height)
@@ -70,10 +73,20 @@ class Game:
         self.audio = Audio()
 
         icon_path = assets_dir / "images" / "icon.ico"
+        cursor_path = assets_dir / "images" / "cursor.png"
         theme_path = assets_dir / "sounds" / "theme.ogg"
 
         if icon_path.exists():
             self.window.set_icon(icon_path)
+
+        self.cursor_surface = None
+        if cursor_path.exists():
+            self.cursor_surface = load_image(str(cursor_path), alpha=True)
+        if self.cursor_surface is not None:
+            # The cursor tip is at the image origin, so clicks stay aligned.
+            self.cursor_hotspot = (0, 0)
+
+        enable_custom_cursor(self.cursor_surface is not None)
 
         # Load theme and slash sound effects
         if theme_path.exists():
@@ -131,8 +144,19 @@ class Game:
         self.window.set_background_color(list(self.background_color))
         if self.current_scene is not None:
             self.current_scene.render()
+        self._draw_cursor()
 
         self.window.update()
+
+    def _draw_cursor(self) -> None:
+        if self.cursor_surface is None or self.input is None or not is_mouse_visible():
+            return
+
+        mouse = self.input.mouse
+        mouse_x, mouse_y = mouse.get_position()
+        draw_x = int(mouse_x - self.cursor_hotspot[0])
+        draw_y = int(mouse_y - self.cursor_hotspot[1])
+        blit_surface(self.cursor_surface, (draw_x, draw_y), target=get_screen())
 
     def loop(self) -> None:
         if self.window is None:

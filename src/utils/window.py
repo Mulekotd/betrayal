@@ -2,6 +2,9 @@ import math
 
 from external.pplay.window import Window
 
+_custom_cursor_enabled = False
+_custom_cursor_visible = True
+
 
 def get_screen():
     screen = Window.get_screen()
@@ -104,5 +107,25 @@ def set_icon(icon_path):
     return get_window().set_icon(icon_path)
 
 
+def enable_custom_cursor(enabled: bool):
+    global _custom_cursor_enabled
+    _custom_cursor_enabled = bool(enabled)
+
+    if _custom_cursor_enabled:
+        return get_window().set_mouse_visible(False)
+
+    return get_window().set_mouse_visible(_custom_cursor_visible)
+
+
 def set_mouse_visible(visible: bool):
-    return get_window().set_mouse_visible(visible)
+    global _custom_cursor_visible
+    _custom_cursor_visible = bool(visible)
+
+    if _custom_cursor_enabled:
+        return get_window().set_mouse_visible(False)
+
+    return get_window().set_mouse_visible(_custom_cursor_visible)
+
+
+def is_mouse_visible() -> bool:
+    return _custom_cursor_visible

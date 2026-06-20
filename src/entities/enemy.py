@@ -380,7 +380,7 @@ class Soldier(Enemy):
 		is_ranged: bool,
 		base_health: int = 60,
 		base_speed: float = 120.0,
-		base_damage: int = 16,
+		base_damage: int = 22,
 		xp_value: int = 8
 	) -> None:
 		if is_ranged:
@@ -411,8 +411,8 @@ class Soldier(Enemy):
 		self.set_scale(1.0)
 		self.attack_timer = 0.0
 		self.attack_cooldown = 2.0 if is_ranged else 0.8
-		self.ranged_distance = 96.0
-		self.ranged_hold_distance = 112.0
+		self.ranged_distance = 160.0
+		self.ranged_hold_distance = 188.0
 		self.melee_distance = 28.0
 		self.contact_damage = False
 		self.current_attack_action = ""
@@ -606,7 +606,7 @@ class Knight(Enemy):
 		sprite_path: str | Path,
 		base_health: int = 100,
 		base_speed: float = 80.0,
-		base_damage: int = 28,
+		base_damage: int = 36,
 		xp_value: int = 15
 	) -> None:
 		super().__init__(

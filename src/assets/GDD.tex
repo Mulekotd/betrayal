@@ -1,0 +1,314 @@
+\documentclass[a4paper,12pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[brazil]{babel}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{titlesec}
+\usepackage{float}
+\usepackage[hidelinks]{hyperref}
+
+\geometry{margin=2.5cm}
+\graphicspath{{src/assets/images/}{./}}
+
+\captionsetup{
+    labelformat=empty,
+    justification=centering,
+    font=small,
+    skip=10pt
+}
+
+\captionsetup[subfigure]{
+    labelformat=empty,
+    justification=centering,
+    font=small
+}
+
+\titleformat{\section}
+  {\large\bfseries}
+  {}
+  {0pt}
+  {}
+
+\title{\textbf{Game Design Document}}
+\author{Juan Felipe Silva de Souza \\ João Pedro Silverio Gama}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+%----------------------------------------
+
+\section*{1. High Concept}
+
+\noindent
+\textit{Betrayal} é um roguelite 2D top-down de combate em arena, com progressão por sobrevivência, troca instantânea de armas elementais e escalonamento constante de dificuldade. O jogador controla um rei traído que precisa sobreviver ao cerco de soldados do usurpador, evoluir seus atributos ao longo da partida e derrotar o chefe final que surge no fim da run.
+
+%----------------------------------------
+
+\section*{2. Gameplay e Enredo}
+
+\subsection*{Enredo}
+
+O protagonista é um rei traído que teve seu trono usurpado. Cercado por tropas inimigas, ele atravessa uma arena medieval tomada por soldados, arqueiros e cavaleiros até enfrentar o rei usurpador, chefe final da partida.
+
+\subsection*{Loop Principal}
+
+\begin{itemize}
+    \item O jogador inicia a partida no centro de uma arena maior que a tela, com câmera seguindo seu deslocamento.
+    \item Inimigos surgem continuamente ao redor da área jogável e aumentam de pressão com o passar do tempo.
+    \item O ataque é automático, baseado na espada equipada e em sua velocidade de ataque.
+    \item Ao derrotar inimigos, o jogador recebe experiência, sobe de nível e escolhe uma entre três cartas de melhoria.
+    \item A run termina quando o jogador morre ou derrota o chefe final, que aparece após aproximadamente 10 minutos de sobrevivência.
+\end{itemize}
+
+\pagebreak
+
+\subsection*{Controles Atuais}
+
+\begin{itemize}
+    \item \textbf{WASD / Setas} -- movimentação do personagem.
+    \item \textbf{SHIFT} -- esquiva com invulnerabilidade temporária.
+    \item \textbf{SPACE} -- postura de guarda/estado defensivo.
+    \item \textbf{1, 2 e 3} -- troca imediata entre as espadas de fogo, gelo e vento.
+    \item \textbf{ESC} -- abre ou fecha o menu de pausa.
+    \item \textbf{X} -- alterna a exibição de FPS para depuração.
+\end{itemize}
+
+\subsection*{Combate e Mobilidade}
+
+O combate atual é focado em sobrevivência e posicionamento. Como os ataques acontecem automaticamente, a tomada de decisão do jogador se concentra em movimentação, esquiva, escolha da arma ideal para cada situação e gerenciamento de espaço contra grupos de inimigos e projéteis.
+
+O personagem possui:
+
+\begin{itemize}
+    \item \textbf{Esquiva} -- deslocamento rápido com invulnerabilidade curta.
+    \item \textbf{Regeneração passiva} -- cura gradual com base no atributo de recuperação.
+    \item \textbf{Defesa} -- reduz parte do dano recebido.
+\end{itemize}
+
+\subsection*{Armas}
+
+Diferente da versão inicial do GDD, o jogador começa a run com acesso às três espadas e pode alternar entre elas a qualquer momento:
+
+\begin{itemize}
+    \item \textbf{Espada de Fogo} -- causa bom dano base, aplica queimadura em área curta e é especialmente eficiente contra cavaleiros.
+    \item \textbf{Espada de Gelo} -- desacelera inimigos, causa dano extra em combos consecutivos e pode congelar alvos após acertos sucessivos.
+    \item \textbf{Espada de Vento} -- realiza golpes circulares em área, acerta mais de uma vez por ataque e aumenta a mobilidade do jogador.
+\end{itemize}
+
+\pagebreak
+
+\subsection*{Progressão e Melhorias}
+
+Cada subida de nível abre uma tela com três opções aleatórias dentre os atributos disponíveis. Cada atributo pode ser melhorado até cinco vezes durante a run.
+
+\begin{itemize}
+    \item \textbf{Vida Máxima} -- aumenta a vida total e concede uma pequena cura imediata.
+    \item \textbf{Recuperação} -- melhora a regeneração passiva de vida.
+    \item \textbf{Armadura} -- aumenta a redução de dano.
+    \item \textbf{Força} -- aumenta o dano bruto dos ataques.
+    \item \textbf{Velocidade de Movimento} -- melhora a mobilidade geral.
+    \item \textbf{Velocidade de Ataque} -- reduz o intervalo entre golpes automáticos.
+\end{itemize}
+
+\subsection*{Mapa e Estrutura da Arena}
+
+A arena atual não é uma tela fixa única. O mapa possui dimensões maiores que o viewport e inclui:
+
+\begin{itemize}
+    \item Câmera com seguimento do jogador;
+    \item Obstáculos estáticos com colisão;
+    \item Geração de ambiente com árvores;
+    \item Uma vila com casas que interfere na navegação e no posicionamento durante o combate.
+\end{itemize}
+
+\pagebreak
+
+%----------------------------------------
+
+\section*{3. Inimigos e Escalonamento}
+
+\subsection*{Tipos de Inimigo}
+
+\begin{itemize}
+    \item \textbf{Soldado} -- unidade corpo a corpo de pressão constante.
+    \item \textbf{Arqueiro} -- inimigo de longo alcance que dispara flechas e exige deslocamento lateral.
+    \item \textbf{Cavaleiro} -- inimigo resistente, com armadura elevada e comportamento de guarda.
+    \item \textbf{Rei Usurpador} -- chefe final com grande vida, armadura própria e ciclo de ataques elementais inspirados nas três espadas do jogador.
+\end{itemize}
+
+\subsection*{Chefe Final}
+
+O chefe aparece após cerca de 600 segundos de partida. Seu combate foi construído para funcionar como clímax da run:
+
+\begin{itemize}
+    \item Alterna ataques de vento, fogo e gelo;
+    \item Usa golpes em área com tempo de preparação;
+    \item Pode aplicar queimadura, lentidão e congelamento no jogador;
+    \item Reduz o ritmo de surgimento de inimigos comuns enquanto está ativo;
+    \item Ao ser derrotado, encerra a run com tela de vitória.
+\end{itemize}
+
+\subsection*{Escalonamento de Dificuldade}
+
+O desafio não depende apenas de ondas fixas. A dificuldade cresce dinamicamente com:
+
+\begin{itemize}
+    \item Aumento progressivo da taxa de spawn ao longo do tempo;
+    \item Crescimento de velocidade dos inimigos durante a partida;
+    \item Aumento do dano inimigo conforme o tempo de sobrevivência e o nível do jogador.
+\end{itemize}
+
+\pagebreak
+
+%----------------------------------------
+
+\section*{4. Interface de Usuário}
+
+\subsection*{Fluxo de Telas}
+
+\begin{itemize}
+    \item \textbf{Menu Principal} -- opções de jogar, abrir configurações e sair.
+    \item \textbf{Cena de Jogo} -- combate principal com HUD e overlays de eventos.
+    \item \textbf{Menu de Pausa} -- retomar, abrir opções ou voltar ao menu.
+    \item \textbf{Configurações} -- controle de volume por slider.
+    \item \textbf{Tela de Derrota} -- reinício rápido da run.
+    \item \textbf{Tela de Vitória} -- reiniciar ou voltar ao menu principal.
+\end{itemize}
+
+\subsection*{HUD}
+
+A interface em jogo foi simplificada e organizada em torno de leitura rápida de combate. Os elementos atualmente implementados são:
+
+\begin{itemize}
+    \item Barra de vida com valor atual e máximo;
+    \item Barra de experiência com indicação de nível;
+    \item Barra de armas com ícones clicáveis das três espadas;
+    \item Contador de abates;
+    \item Cronômetro da run;
+    \item Exibição opcional de FPS.
+\end{itemize}
+
+\subsection*{Feedback Visual}
+
+\begin{itemize}
+    \item Números flutuantes de dano para golpes diretos e queimadura;
+    \item Overlays de status para queimadura e congelamento;
+    \item Cartas animadas de level up;
+    \item Arcos e círculos de ataque desenhados na tela para indicar alcance e área dos golpes.
+\end{itemize}
+
+\pagebreak
+
+%----------------------------------------
+
+\section*{5. Áudio e Música}
+
+O projeto já conta com uma trilha tema em loop durante a partida e com efeitos sonoros separados para cada arma elemental. A direção de áudio reforça o ritmo da run e ajuda o jogador a identificar a espada equipada no momento.
+
+\begin{itemize}
+    \item Música tema tocada durante a run;
+    \item Efeito sonoro exclusivo para cada golpe de fogo, gelo e vento.
+\end{itemize}
+
+%----------------------------------------
+
+\section*{6. Direção de Arte e Referências}
+
+O estilo visual de \textit{Betrayal} segue a linha de pixel art 2D em perspectiva top-down, com temática medieval-fantástica. A apresentação atual combina sprites de personagens, armas e obstáculos ambientais com UI de forte contraste para priorizar leitura durante combates intensos.
+
+As principais referências de gênero continuam próximas de jogos como \textit{Vampire Survivors}, \textit{The Binding of Isaac} e \textit{Enter the Gungeon}, mas com foco próprio em espadas elementais e sobrevivência em arena.
+
+%----------------------------------------
+
+\section*{7. Créditos de Assets}
+
+\subsection*{Sprites}
+
+\begin{itemize}
+    \item \textbf{Knight} -- PixiVan (\href{https://pixivan.itch.io/}{pixivan.itch.io})
+    \item \textbf{Player} -- SventHole (\href{https://sventhole.itch.io/}{sventhole.itch.io})
+    \item \textbf{Armor} -- Polygonix (\href{https://polygonix.itch.io/}{polygonix.itch.io})
+    \item \textbf{King} -- LuizMelo (\href{https://luizmelo.itch.io/}{luizmelo.itch.io})
+    \item \textbf{Archer and Soldier} -- Zerie (\href{https://zerie.itch.io}{zerie.itch.io})
+\end{itemize}
+
+\subsection*{Sound Effects}
+
+\begin{itemize}
+    \item \textbf{Fire Slash} -- Fronbondi\_Skegs (\href{https://pixabay.com/users/fronbondi_skegs-23154649/}{pixabay.com})
+    \item \textbf{Ice Slash} -- Abdullah Pullin (\href{https://samplefocus.com/users/abdullah-pullin}{samplefocus.com})
+    \item \textbf{Wind Slash} -- Jesse Nicasio (\href{https://samplefocus.com/users/jesse-nicasio}{samplefocus.com})
+\end{itemize}
+
+%----------------------------------------
+
+\section*{Imagens do Projeto}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.55\textwidth]{logo.png}
+    \caption{\textit{Logo atual do jogo Betrayal}}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[t]{0.47\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{player_spritesheet.png}
+        \caption{\textit{Spritesheet do protagonista controlado pelo jogador}}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.47\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{soldier_spritesheet.png}
+        \caption{\textit{Spritesheet base utilizada para soldados e arqueiros}}
+    \end{subfigure}
+
+    \vspace{0.5cm}
+
+    \begin{subfigure}[t]{0.47\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{knight_spritesheet.png}
+        \caption{\textit{Spritesheet do cavaleiro blindado}}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.47\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{boss_spritesheet.png}
+        \caption{\textit{Spritesheet do chefe final}}
+    \end{subfigure}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[t]{0.28\textwidth}
+        \centering
+        \includegraphics[width=0.95\textwidth]{fire_sword.png}
+        \caption{\textit{Espada de Fogo}}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.28\textwidth}
+        \centering
+        \includegraphics[width=0.95\textwidth]{ice_sword.png}
+        \caption{\textit{Espada de Gelo}}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.28\textwidth}
+        \centering
+        \includegraphics[width=0.95\textwidth]{wind_sword.png}
+        \caption{\textit{Espada de Vento}}
+    \end{subfigure}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.82\textwidth]{buildings.png}
+    \caption{\textit{Spritesheet de construções utilizadas na composição da arena}}
+\end{figure}
+
+\end{document}
