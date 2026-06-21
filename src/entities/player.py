@@ -267,6 +267,9 @@ class Player:
 
 		keyboard = input_manager.keyboard
 		guard_pressed = keyboard.key_pressed("SPACE")
+		guard_frames = self.animation.frames.get("GUARD", [])
+		guard_available = bool(guard_frames)
+		guard_active = guard_available and (guard_pressed or self.is_guarding())
 
 		self.roll_time_left = max(0.0, self.roll_time_left     - dt)
 		self.roll_cooldown_left = max(0.0, self.roll_cooldown_left - dt)
@@ -289,7 +292,13 @@ class Player:
 		shift_just_pressed = shift_now and not self._shift_was_down
 		self._shift_was_down = shift_now
 
-		if shift_just_pressed and self.roll_cooldown_left <= 0.0 and not self.is_dead() and not is_frozen:
+		if (
+			shift_just_pressed
+			and self.roll_cooldown_left <= 0.0
+			and not self.is_dead()
+			and not is_frozen
+			and not guard_active
+		):
 			rdx = 0.0
 			rdy = 0.0
 			if keyboard.key_pressed("A") or keyboard.key_pressed("LEFT"):  rdx -= 1.0
@@ -328,8 +337,6 @@ class Player:
 		self._update_invulnerability(dt)
 		self._update_regen(dt)
 
-		guard_frames = self.animation.frames.get("GUARD", [])
-		guard_available = bool(guard_frames)
 		if guard_pressed and guard_available:
 			if not self.is_guarding():
 				guard_duration = max(0.12, self.animation.get_duration("GUARD") / 1000.0)

@@ -80,10 +80,11 @@ class Game:
             self.window.set_icon(icon_path)
 
         self.cursor_surface = None
+
         if cursor_path.exists():
             self.cursor_surface = load_image(str(cursor_path), alpha=True)
+
         if self.cursor_surface is not None:
-            # The cursor tip is at the image origin, so clicks stay aligned.
             self.cursor_hotspot = (0, 0)
 
         enable_custom_cursor(self.cursor_surface is not None)

@@ -1,10 +1,10 @@
 # Betrayal
 
-## 📌 Overview
+## Overview
 
-Betrayal is a top-down roguelite game set in a medieval world, focusing on frantic combat and upgrading your swords.
+Betrayal is a top-down roguelite game set in a medieval world, focusing on frantic combat and upgrading your skills.
 
-## ⚙️ Installation and Setup
+## Setup
 
 ### 1. Clone the Repository
 
@@ -19,8 +19,8 @@ cd betrayal
 
 ```bash
 python -m venv env
-.\env\Scripts\activate # Windows
-source env/bin/activate # Linux
+.\env\Scripts\activate  # Windows
+source env/bin/activate # Linux/macOS
 ```
 
 ### 3. Install Dependencies

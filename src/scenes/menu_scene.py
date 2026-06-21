@@ -47,7 +47,7 @@ class MenuScene:
 		self.logo_scale = target_logo_width / max(1, int(self.logo.width))
 		self.logo.scale_x = self.logo_scale
 		self.logo.scale_y = self.logo_scale
-		self.logo_surface, self.logo_glow_surface = self._build_logo_layers()
+		self.logo_surface = self._build_logo_surface()
 
 		self.menu_font = self.services.fonts.title(74)
 		self.menu_color = (120, 210, 235)
@@ -124,20 +124,6 @@ class MenuScene:
 
 		screen.blit(self.background_base_layer, (0, 0))
 		screen.blit(self.background_blur_layer, (0, 0))
-
-		logo_w = max(1, int(self.logo.width * self.logo_scale))
-		logo_h = max(1, int(self.logo.height * self.logo_scale))
-		logo_x = int(self.world_width * 0.50)
-		logo_y = int(self.world_height * 0.35)
-
-		logo_x = min(max(32, logo_x), self.world_width - logo_w - 32)
-		logo_y = min(max(32, logo_y), self.world_height - logo_h - 32)
-		logo_x += int(self._mx_norm * 10.0)
-		logo_y += int(self._my_norm * 8.0)
-
-		if logo_x >= 0 and logo_y >= 0 and logo_x + logo_w <= self.world_width and logo_y + logo_h <= self.world_height:
-			region = self.background_base_layer.subsurface((logo_x, logo_y, logo_w, logo_h)).copy()
-			blit_surface(region, (logo_x, logo_y), target=screen)
 
 		screen.blit(self.background_depth_layer, (0, 0))
 
@@ -218,27 +204,11 @@ class MenuScene:
 
 		return overlay
 
-	def _build_logo_layers(self):
+	def _build_logo_surface(self):
 		logo_w = max(1, int(self.logo.width * self.logo_scale))
 		logo_h = max(1, int(self.logo.height * self.logo_scale))
 
-		raw = scale_surface(self.logo.image, logo_w, logo_h, smooth=True).convert_alpha()
-
-		glow = create_surface(logo_w, logo_h, alpha=True)
-		glow_center = (logo_w // 2, logo_h // 2)
-
-		max_radius = max(logo_w, logo_h)
-		step = max(1, int(max_radius / 12))
-		for r in range(max_radius, 0, -step):
-			t = r / max(1, max_radius)
-
-			alpha = int((1.0 - t) * 90)
-			if alpha <= 0:
-				continue
-
-			draw_circle((90, 210, 230, alpha), glow_center, r, target=glow)
-
-		return raw, glow
+		return scale_surface(self.logo.image, logo_w, logo_h, smooth=True).convert_alpha()
 
 	def _draw_logo(self, target) -> None:
 		logo_w = self.logo_surface.get_width()
@@ -315,4 +285,8 @@ class MenuScene:
 		)
 
 	def _quit_game(self) -> None:
+		if self.game is not None:
+			self.game.stop()
+			return
+
 		get_window().close()
