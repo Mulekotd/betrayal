@@ -18,11 +18,13 @@ class Audio:
 		except Exception:
 			return False
 
+	def _ensure_ready(self) -> bool:
+		self._audio_available = self._ensure_audio_backend()
+		return self._audio_available
+
 	def set_volume(self, value: int) -> None:
 		self._volume = max(0, min(100, int(value)))
-		self._audio_available = self._ensure_audio_backend()
-
-		if not self._audio_available:
+		if not self._ensure_ready():
 			return
 
 		SoundManager.set_sfx_volume(self._volume)
@@ -35,8 +37,7 @@ class Audio:
 		return self._volume
 
 	def load_sound(self, key: str, filepath: str, volume: float = 1.0) -> None:
-		if not self._ensure_audio_backend():
-			self._audio_available = False
+		if not self._ensure_ready():
 			return
 
 		sound = Sound(filepath)
@@ -74,8 +75,7 @@ class Audio:
 			sound.stop()
 
 	def load_music(self, filepath: str, key: str = "music") -> None:
-		if not self._ensure_audio_backend():
-			self._audio_available = False
+		if not self._ensure_ready():
 			return
 
 		self._music[key] = Music(filepath)

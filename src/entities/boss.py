@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Callable
 
 from src.entities.enemy import Enemy, EnemyAction
-from src.entities.weapon import FireSword, IceSword, Slash, WindSword
+from src.entities.weapon import FireSword, IceSword, Slash, Sword, WindSword
 
 
 class Boss(Enemy):
@@ -15,9 +15,9 @@ class Boss(Enemy):
 			frame_gap=0,
 			actions=["ATTACK_1", "ATTACK_2", "ATTACK_3", "DEATH", "IDLE", "WALK", "HIT"],
 			frame_rate=120,
-			base_health=2500,
-			base_speed=96.0,
-			base_damage=100,
+			base_health=3000,
+			base_speed=102.0,
+			base_damage=118,
 			xp_value=320,
 			armor=0.24
 		)
@@ -38,21 +38,20 @@ class Boss(Enemy):
 		self.attack_cycle = [
 			("ATTACK_1", "wind", 1.25, 0.10),
 			("ATTACK_2", "fire", 1.65, 0.16),
-			("ATTACK_3", "ice", 2.05, 0.22),
+			("ATTACK_3", "ice", 2.05, 0.22)
 		]
 		self.next_attack_index = 0
 		self.sword_base_damages = {
-			"wind": 100,
-			"fire": 150,
-			"ice": 300
+			"wind": 105,
+			"fire": 235,
+			"ice": 170
 		}
 		self.swords = self._build_swords()
 
-	def _build_swords(self) -> dict[str, object]:
+	def _build_swords(self) -> dict[str, Sword]:
 		wind = WindSword()
 		wind.base_damage = self.sword_base_damages["wind"]
 		wind.strength_scale = 0.0
-		wind.hits_per_attack = 1
 		wind.radius = 132.0
 		wind.duration = 0.22
 		wind.attack_speed_mult = 1.0
@@ -62,28 +61,19 @@ class Boss(Enemy):
 		fire.strength_scale = 0.0
 		fire.radius = 104.0
 		fire.duration = 0.24
-		fire.burn_duration = 3.2
-		fire.burn_damage_ratio = 0.24
-		fire.burn_strength_scale = 0.0
-		fire.burn_stacks = 3
+		fire.burn_dps_ratio = 0.40
 
 		ice = IceSword()
 		ice.base_damage = self.sword_base_damages["ice"]
 		ice.strength_scale = 0.0
 		ice.radius = 116.0
 		ice.duration = 0.26
-		ice.slow_factor = 0.55
-		ice.slow_duration = 1.9
-		ice.combo_bonus_step = 0
-		ice.combo_bonus_cap = 0
-		ice.combo_strength_scale = 0.0
-		ice.freeze_hits = 2
-		ice.freeze_duration = 1.2
+		ice.thaw_slow_multiplier = 0.35
 
 		return {
 			"wind": wind,
 			"fire": fire,
-			"ice": ice,
+			"ice": ice
 		}
 
 	def spawn(self, x: float, y: float, speed_multiplier: float = 1.0) -> None:
@@ -111,6 +101,14 @@ class Boss(Enemy):
 			self.attack_anim_time_left = 0.0
 			self._set_state(EnemyAction.DEATH)
 
+	def freeze(
+		self,
+		duration: float = 3.0,
+		thaw_slow_multiplier: float = 0.5,
+		thaw_slow_duration: float = 3.0
+	) -> None:
+		self.slow(thaw_slow_multiplier, max(duration, thaw_slow_duration))
+
 	def update_towards(
 		self,
 		target_x: float,
@@ -122,13 +120,18 @@ class Boss(Enemy):
 		move_target_y: float | None = None
 	) -> None:
 		self._update_statuses(dt)
-		self.animation.update(int(dt * 1000))
-		self.attack_timer = max(0.0, self.attack_timer - dt * self.slow_factor)
-		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
 
 		if self.health <= 0:
 			self._set_state(EnemyAction.DEATH)
 			return
+
+		if self.is_frozen():
+			self._set_state(EnemyAction.IDLE)
+			return
+
+		self.animation.update(int(dt * 1000))
+		self.attack_timer = max(0.0, self.attack_timer - dt * self.status_effects.speed_multiplier())
+		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
 
 		cx, cy = self.center
 		dx = target_x - cx
@@ -141,10 +144,6 @@ class Boss(Enemy):
 			self.facing_dir = -1 if dx < 0 else 1
 		else:
 			dist = 0.0
-
-		if self.freeze_timer > 0.0:
-			self._set_state(EnemyAction.IDLE)
-			return
 
 		if self.attack_anim_time_left > 0.0 and self.current_attack_action:
 			self._set_state(self._action_for_name(self.current_attack_action))
@@ -171,7 +170,7 @@ class Boss(Enemy):
 			return
 
 		inv_dist = 1.0 / math.sqrt(move_dist_sq)
-		speed = self.speed * self.slow_factor
+		speed = self.speed * self.status_effects.speed_multiplier()
 		self.x += move_dx * inv_dist * speed * dt
 		self.y += move_dy * inv_dist * speed * dt
 		self._set_state(EnemyAction.WALK)

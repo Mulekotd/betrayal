@@ -1,38 +1,52 @@
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
 
+from src.utils.types import ColorRGB, FontLike, SurfaceLike
 from src.utils.window import get_screen
 
 
-class DamageNumbers:
-	def __init__(self, font: Any) -> None:
-		self.font = font
-		self.items: list[dict[str, object]] = []
-		self._cache: dict[tuple[str, tuple[int, int, int]], tuple[Any, Any]] = {}
+@dataclass(slots=True)
+class DamageNumber:
+	text: str
+	x: float
+	y: float
+	velocity_y: float
+	life: float
+	max_life: float
+	color: ColorRGB
 
-	def spawn(self, amount: int, x: float, y: float, color: tuple[int, int, int]) -> None:
-		self.items.append({
-			"text": str(amount),
-			"x": x,
-			"y": y,
-			"vy": -135.0,
-			"life": 0.30,
-			"max_life": 0.30,
-			"color": color
-		})
+
+class DamageNumbers:
+	def __init__(self, font: FontLike) -> None:
+		self.font = font
+		self.items: list[DamageNumber] = []
+		self._cache: dict[tuple[str, ColorRGB], tuple[SurfaceLike, SurfaceLike]] = {}
+
+	def spawn(self, amount: int, x: float, y: float, color: ColorRGB) -> None:
+		self.items.append(
+			DamageNumber(
+				text=str(amount),
+				x=x,
+				y=y,
+				velocity_y=-135.0,
+				life=0.30,
+				max_life=0.30,
+				color=color,
+			)
+		)
 
 	def update(self, dt: float) -> None:
 		if not self.items:
 			return
 
-		survivors: list[dict[str, object]] = []
+		survivors: list[DamageNumber] = []
 		for item in self.items:
-			item["life"] = float(item["life"]) - dt
-			if float(item["life"]) <= 0.0:
+			item.life -= dt
+			if item.life <= 0.0:
 				continue
 
-			item["y"] = float(item["y"]) + float(item["vy"]) * dt
+			item.y += item.velocity_y * dt
 			survivors.append(item)
 
 		self.items = survivors
@@ -46,35 +60,33 @@ class DamageNumbers:
 		screen_height = screen.get_height()
 
 		for item in self.items:
-			text = str(item["text"])
-			color = item["color"]
+			surface, shadow = self._surfaces(item.text, item.color)
+			alpha = max(0, min(255, int(255 * (item.life / item.max_life))))
 
-			surf, shadow = self._surfaces(text, color)
-
-			life = float(item["life"])
-			max_life = float(item["max_life"])
-
-			alpha = max(0, min(255, int(255 * (life / max_life))))
-			surf.set_alpha(alpha)
+			surface.set_alpha(alpha)
 			shadow.set_alpha(alpha)
 
-			x = int(float(item["x"]) - camera_x - surf.get_width() * 0.5)
-			y = int(float(item["y"]) - camera_y)
-			if x + surf.get_width() < 0 or x > screen_width or y + surf.get_height() < 0 or y > screen_height:
+			draw_x = int(item.x - camera_x - surface.get_width() * 0.5)
+			draw_y = int(item.y - camera_y)
+			if (
+				draw_x + surface.get_width() < 0
+				or draw_x > screen_width
+				or draw_y + surface.get_height() < 0
+				or draw_y > screen_height
+			):
 				continue
 
-			screen.blit(shadow, (x + 1, y + 1))
-			screen.blit(surf, (x, y))
+			screen.blit(shadow, (draw_x + 1, draw_y + 1))
+			screen.blit(surface, (draw_x, draw_y))
 
-	def _surfaces(self, text: str, color: tuple[int, int, int]):
+	def _surfaces(self, text: str, color: ColorRGB) -> tuple[SurfaceLike, SurfaceLike]:
 		key = (text, color)
-
 		cached = self._cache.get(key)
 		if cached is not None:
 			return cached
 
-		surf = self.font.render(text, False, color)
+		surface = self.font.render(text, False, color)
 		shadow = self.font.render(text, False, (0, 0, 0))
-		self._cache[key] = (surf, shadow)
-
-		return surf, shadow
+		cached = (surface, shadow)
+		self._cache[key] = cached
+		return cached

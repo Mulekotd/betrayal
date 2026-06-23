@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Iterable
 
 from src.engine.animation import Animation
+from src.entities.status_effects import StatusEffects
 from src.engine.state_machine import StateMachine
 from src.system.input import Input
 from src.utils.window import get_screen, blit_surface, scale_surface, create_mask_surface, flip_surface
@@ -29,7 +30,7 @@ class Player:
 		attack_speed: float = 1.2,
 		strength: int = 6,
 		max_health: int = 250,
-		health_regen: float = 0.02,
+		health_regen: float = 0.01,
 		defense: int = 2
 	) -> None:
 		self.assets_dir = Path(assets_dir)
@@ -69,6 +70,8 @@ class Player:
 
 		self.max_health = self.attributes["max_health"]
 		self.health = float(self.max_health)
+		self.defense_multiplier = 1.0
+		self.health_regen_multiplier = 1.0
 
 		self.invuln_duration = 0.6
 		self.invuln_left = 0.0
@@ -92,9 +95,11 @@ class Player:
 		self.next_attack_index = 0
 		self.guard_anim_time_left = 0.0
 		self.guard_hold = False
+		self.guard_melee_damage_multiplier = 0.45
 		self.death_hold = False
 
 		self.roll_duration = 0.28
+		self.roll_iframe_duration = 0.38
 		self.roll_speed = 520.0
 		self.roll_cooldown = 0.8
 		self.roll_time_left = 0.0
@@ -104,21 +109,14 @@ class Player:
 		self._shift_was_down = False
 		self.roll_visual_time = 0.0
 		self.damage_popups: list[tuple[int, float, float]] = []
-		self.slow_factor = 1.0
-		self.slow_timer = 0.0
-		self.burn_dps = 0.0
-		self.burn_timer = 0.0
-		self.freeze_timer = 0.0
-		self.ice_hits = 0
-		self.ice_freeze_hits = 0
-		self.ice_combo_timer = 0.0
-		self._burn_popup_accumulator = 0.0
-		self._burn_popup_timer = 0.0
+		self.status_effects = StatusEffects()
+		self._dot_popup_accumulator = 0.0
+		self._dot_popup_timer = 0.0
 		self._draw_cache: dict[tuple[str, int, bool, int, int], object] = {}
 		self._mask_cache: dict[tuple[str, int, bool, int, int], object] = {}
 		self._freeze_mask_cache: dict[tuple[str, int, bool, int, int], object] = {}
 		self._burn_mask_cache: dict[tuple[str, int, bool, int, int], object] = {}
-		self.xp_gain_multiplier = 1.45
+		self.xp_gain_multiplier = 10.0
 		self.xp_growth_factor = 1.15
 		self.base_xp_to_next = 25
 
@@ -148,6 +146,10 @@ class Player:
 	def is_dead(self) -> bool:
 		return self.health <= 0.0
 
+	def set_combat_modifiers(self, defense_multiplier: float = 1.0, health_regen_multiplier: float = 1.0) -> None:
+		self.defense_multiplier = max(0.0, float(defense_multiplier))
+		self.health_regen_multiplier = max(0.0, float(health_regen_multiplier))
+
 	def is_rolling(self) -> bool:
 		return self.roll_time_left > 0.0
 
@@ -163,7 +165,7 @@ class Player:
 		self.roll_time_left = self.roll_duration
 		self.roll_visual_time = self.roll_duration
 		self.roll_cooldown_left = self.roll_cooldown
-		self.invuln_left = self.roll_duration
+		self.invuln_left = max(self.invuln_left, self.roll_iframe_duration)
 		self._blink_timer = 0.0
 		self._blink_on = True
 		self._set_state(PlayerAction.ROLL)
@@ -276,8 +278,8 @@ class Player:
 
 		dx = 0.0
 		dy = 0.0
-		move_speed = self.attributes["move_speed"] * max(0.1, float(move_speed_multiplier)) * self.slow_factor
-		is_frozen = self.freeze_timer > 0.0
+		move_speed = self.attributes["move_speed"] * max(0.1, float(move_speed_multiplier)) * self.status_effects.speed_multiplier()
+		is_frozen = self.status_effects.is_frozen()
 
 		if self.is_rolling():
 			self.x += self.roll_dir_x * self.roll_speed * dt
@@ -353,8 +355,10 @@ class Player:
 		if guard_pressed and guard_available:
 			self.hit_anim_time_left = 0.0
 			self._set_state(PlayerAction.GUARD)
+
 			if self.guard_hold:
 				self._hold_guard_frame()
+
 			return
 
 		if self.hit_anim_time_left > 0.0:
@@ -426,16 +430,29 @@ class Player:
 					enemy_move(nx * overlap, ny * overlap)
 
 		if collided and max_damage > 0:
-			self.take_damage(max_damage)
+			self.take_damage(max_damage, damage_type="melee")
 
-	def take_damage(self, amount: int, defense_pierce: float = 0.0, bonus_vs_defense: float = 0.0) -> bool:
+	def take_damage(
+		self,
+		amount: int,
+		defense_pierce: float = 0.0,
+		bonus_vs_defense: float = 0.0,
+		damage_type: str = "melee"
+	) -> bool:
 		if self.is_dead() or self.invuln_left > 0.0:
 			return False
 
-		defense = max(0.0, float(self.attributes["defense"]))
+		is_guarding = self.is_guarding()
+		if is_guarding and damage_type == "projectile":
+			return False
+
+		defense = max(0.0, float(self.attributes["defense"]) * self.defense_multiplier)
 		defense_pierce = max(0.0, min(1.0, float(defense_pierce)))
 		effective_defense = defense * (1.0 - defense_pierce)
 		scaled_amount = float(amount) + defense * max(0.0, float(bonus_vs_defense))
+		if is_guarding:
+			scaled_amount *= self.guard_melee_damage_multiplier
+
 		reduced = max(1, int(round(scaled_amount - effective_defense)))
 		self.health = max(0.0, self.health - reduced)
 		cx, cy = self.center
@@ -482,12 +499,12 @@ class Player:
 			mask_surf = self._get_mask_frame(frame, self.facing_dir < 0)
 			blit_surface(mask_surf, (draw_x, draw_y), target=screen)
 
-		if self.burn_timer > 0.0:
-			burn_mask = self._get_tinted_mask_frame(frame, self._burn_mask_cache, self.facing_dir < 0, (255, 140, 80, 95))
+		if self.is_burning():
+			burn_mask = self._get_tinted_mask_frame(frame, self._burn_mask_cache, self.facing_dir < 0, (255, 70, 70, 120))
 			blit_surface(burn_mask, (draw_x, draw_y), target=screen)
 
-		if self.freeze_timer > 0.0:
-			freeze_mask = self._get_tinted_mask_frame(frame, self._freeze_mask_cache, self.facing_dir < 0, (80, 160, 255, 110))
+		if self.is_frozen():
+			freeze_mask = self._get_tinted_mask_frame(frame, self._freeze_mask_cache, self.facing_dir < 0, (90, 170, 255, 135))
 			blit_surface(freeze_mask, (draw_x, draw_y), target=screen)
 
 	def _get_draw_frame(self, frame, flip_x: bool):
@@ -570,93 +587,66 @@ class Player:
 
 		if self.regen_timer >= 1.0:
 			self.regen_timer = 0.0
-			heal = self.max_health * self.attributes["health_regen"]
+			heal = self.max_health * self.attributes["health_regen"] * self.health_regen_multiplier
 			self.health = min(self.max_health, self.health + heal)
 
-	def apply_burn(self, dps: float, duration: float, stack_cap: int = 1) -> None:
-		dps = max(0.0, float(dps))
-		stack_cap = max(1, int(stack_cap))
+	def ignite(self, dps: float, duration: float = 3.0) -> None:
+		self.status_effects.ignite(dps, duration)
 
-		if self.burn_timer <= 0.0:
-			self.burn_dps = dps
-		else:
-			max_burn_dps = max(self.burn_dps, dps * stack_cap)
-			self.burn_dps = min(max_burn_dps, self.burn_dps + dps)
+	def freeze(
+		self,
+		duration: float = 3.0,
+		thaw_slow_multiplier: float = 0.5,
+		thaw_slow_duration: float = 3.0,
+	) -> None:
+		self.status_effects.freeze(duration, thaw_slow_multiplier, thaw_slow_duration)
 
-		self.burn_timer = max(self.burn_timer, duration)
+	def slow(self, multiplier: float, duration: float) -> None:
+		self.status_effects.slow(multiplier, duration)
 
-	def apply_slow(self, slow_factor: float, duration: float) -> None:
-		self.slow_factor = min(self.slow_factor, float(slow_factor))
-		self.slow_timer = max(self.slow_timer, float(duration))
+	def is_burning(self) -> bool:
+		return self.status_effects.is_burning()
 
-	def register_ice_hit(self, freeze_hits: int, freeze_duration: float, combo_window: float = 0.0) -> None:
-		if combo_window > 0.0 and self.ice_combo_timer <= 0.0:
-			self.ice_hits = 0
-
-		self.ice_hits += 1
-		self.ice_freeze_hits += 1
-		self.ice_combo_timer = max(self.ice_combo_timer, combo_window)
-
-		if self.ice_freeze_hits >= max(1, int(freeze_hits)):
-			self.ice_freeze_hits = 0
-			self.ice_hits = 0
-			self.ice_combo_timer = 0.0
-			self.freeze_timer = max(self.freeze_timer, float(freeze_duration))
+	def is_frozen(self) -> bool:
+		return self.status_effects.is_frozen()
 
 	def _update_statuses(self, dt: float) -> None:
 		if self.is_dead():
 			return
 
-		if self.burn_timer > 0.0:
+		burn_damage = self.status_effects.update(dt)
+		if burn_damage > 0.0:
 			before_health = float(self.health)
-			self.burn_timer = max(0.0, self.burn_timer - dt)
-			self.health = max(0.0, self.health - self.burn_dps * dt)
-			self._record_burn_damage(before_health - float(self.health), dt)
-
-			if self.burn_timer <= 0.0:
-				self._flush_burn_popup()
-				self.burn_dps = 0.0
-
-		if self.slow_timer > 0.0:
-			self.slow_timer = max(0.0, self.slow_timer - dt)
-			if self.slow_timer <= 0.0:
-				self.slow_factor = 1.0
-
-		if self.freeze_timer > 0.0:
-			self.freeze_timer = max(0.0, self.freeze_timer - dt)
-
-		if self.ice_combo_timer > 0.0:
-			self.ice_combo_timer = max(0.0, self.ice_combo_timer - dt)
-			if self.ice_combo_timer <= 0.0:
-				self.ice_hits = 0
+			self.health = max(0.0, self.health - burn_damage)
+			self._record_dot_damage(before_health - float(self.health), dt)
 
 		if self.health <= 0.0 and self.death_anim_time_left <= 0.0 and not self.death_hold:
 			self._trigger_death_animation()
 
-	def _record_burn_damage(self, amount: float, dt: float) -> None:
+	def _record_dot_damage(self, amount: float, dt: float) -> None:
 		if amount <= 0.0:
 			return
 
-		self._burn_popup_accumulator += amount
-		self._burn_popup_timer += dt
+		self._dot_popup_accumulator += amount
+		self._dot_popup_timer += dt
 
-		if self._burn_popup_accumulator >= 1.0 and self._burn_popup_timer >= 0.3:
-			self._flush_burn_popup()
+		if self._dot_popup_accumulator >= 1.0 and self._dot_popup_timer >= 0.3:
+			self._flush_dot_popup()
 
-	def _flush_burn_popup(self) -> None:
-		if self._burn_popup_accumulator < 0.5:
-			self._burn_popup_accumulator = 0.0
-			self._burn_popup_timer = 0.0
+	def _flush_dot_popup(self) -> None:
+		if self._dot_popup_accumulator < 0.5:
+			self._dot_popup_accumulator = 0.0
+			self._dot_popup_timer = 0.0
 			return
 
 		cx, cy = self.center
 		self.damage_popups.append((
-			max(1, int(round(self._burn_popup_accumulator))),
+			max(1, int(round(self._dot_popup_accumulator))),
 			float(cx),
 			float(cy) - self.height * 0.35
 		))
-		self._burn_popup_accumulator = 0.0
-		self._burn_popup_timer = 0.0
+		self._dot_popup_accumulator = 0.0
+		self._dot_popup_timer = 0.0
 
 	def init_progression(self) -> None:
 		self.level = 1

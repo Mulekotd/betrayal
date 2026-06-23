@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 import math
 from typing import Callable
@@ -39,6 +41,9 @@ class Slash:
 		delay: float = 0.0,
 		shape: str = "arc",
 		on_hit: Callable[[object, int, "Slash"], None] | None = None,
+		resolve_hit_damage: Callable[[object, int, "Slash"], int] | None = None,
+		owner: object | None = None,
+		owner_is_player: bool = False
 	) -> None:
 		self.x = x
 		self.y = y
@@ -52,6 +57,9 @@ class Slash:
 		self.line_width = max(1, int(line_width))
 		self.shape = shape
 		self.on_hit = on_hit
+		self.resolve_hit_damage = resolve_hit_damage
+		self.owner = owner
+		self.owner_is_player = bool(owner_is_player)
 		self.life_left = max(0.0, duration)
 		self.delay_left = max(0.0, delay)
 		self.hit_ids: set[int] = set()
@@ -89,12 +97,12 @@ class Sword(Slash):
 		arc_deg: float = 135.0,
 		forward_offset: float = 18.0,
 		line_width: int = 6,
-		strength_scale: float = 1.7,
+		strength_scale: float = 1.5,
 		hits_per_attack: int = 1,
 		hit_delay: float = 0.06,
 		attack_speed_mult: float = 1.0,
 		move_speed_mult: float = 1.0,
-		shape: str = "arc",
+		shape: str = "arc"
 	) -> None:
 		super().__init__(
 			x=0.0,
@@ -107,8 +115,10 @@ class Sword(Slash):
 			duration=0.0,
 			color=color,
 			line_width=line_width,
-			shape=shape,
+			shape=shape
 		)
+		del self.on_hit
+		del self.resolve_hit_damage
 
 		self.name = name
 		self.base_damage = base_damage
@@ -127,26 +137,39 @@ class Sword(Slash):
 		self.shape = shape
 
 	def get_cooldown(self, attack_speed: float) -> float:
-		attack_speed = max(0.1, attack_speed)
-		return max(0.05, self.cooldown / attack_speed / self.attack_speed_mult)
+		return max(0.05, self.cooldown / max(0.1, attack_speed))
+
+	def get_attack_speed_multiplier(self) -> float:
+		return self.attack_speed_mult
 
 	def get_move_speed_multiplier(self) -> float:
 		return self.move_speed_mult
 
-	def compute_damage(self, strength: int) -> int:
-		return max(1, int(self.base_damage + strength * self.strength_scale))
+	def get_defense_multiplier(self) -> float:
+		return 1.0
 
-	def spawn_slashes(self, player: object) -> list[Slash]:
-		dir_x, dir_y = getattr(player, "facing", (1.0, 0.0))
+	def get_health_regen_multiplier(self) -> float:
+		return 1.0
+
+	def compute_damage(self, strength: int) -> int:
+		return max(1, int(round(self.base_damage + strength * self.strength_scale)))
+
+	def resolve_hit_damage(self, target: object, player_strength: int, slash: Slash) -> int:
+		_ = (target, player_strength)
+		return max(1, int(slash.damage))
+
+	def spawn_slashes(self, owner: object) -> list[Slash]:
+		dir_x, dir_y = getattr(owner, "facing", (1.0, 0.0))
 		length = math.hypot(dir_x, dir_y)
+
 		if length <= 0.0001:
 			dir_x, dir_y = 1.0, 0.0
 		else:
 			dir_x /= length
 			dir_y /= length
 
-		center = getattr(player, "center", (0.0, 0.0))
-		radius = float(getattr(player, "radius", 0.0))
+		center = getattr(owner, "center", (0.0, 0.0))
+		radius = float(getattr(owner, "radius", 0.0))
 		if self.shape == "circle":
 			origin_x = center[0]
 			origin_y = center[1]
@@ -154,8 +177,10 @@ class Sword(Slash):
 			origin_x = center[0] + dir_x * (radius + self.forward_offset)
 			origin_y = center[1] + dir_y * (radius + self.forward_offset)
 
-		strength = int(getattr(player, "attributes", {}).get("strength", 1))
+		strength = int(getattr(owner, "attributes", {}).get("strength", 1))
 		damage = self.compute_damage(strength)
+		on_hit = type(self).on_hit.__get__(self, type(self))
+		resolve_hit_damage = type(self).resolve_hit_damage.__get__(self, type(self))
 
 		return [
 			Slash(
@@ -171,110 +196,116 @@ class Sword(Slash):
 				line_width=self.line_width,
 				delay=index * self.hit_delay,
 				shape=self.shape,
-				on_hit=self.on_hit,
+				on_hit=on_hit,
+				resolve_hit_damage=resolve_hit_damage,
+				owner=owner,
+				owner_is_player=not hasattr(owner, "enemy_type")
 			)
 			for index in range(self.hits_per_attack)
 		]
 
-	def on_hit(self, enemy: object, player_strength: int, slash: Slash) -> None:
-		_ = (enemy, player_strength, slash)
+	def on_hit(self, target: object, player_strength: int, slash: Slash) -> None:
+		_ = (target, player_strength, slash)
 
 
 class FireSword(Sword):
 	def __init__(self) -> None:
 		super().__init__(
 			name="fire",
-			base_damage=19,
-			cooldown=0.72,
-			radius=82.0,
+			base_damage=24,
+			cooldown=0.82,
+			radius=86.0,
 			duration=0.22,
 			color=(255, 140, 80),
-			attack_speed_mult=1.05,
+			strength_scale=2.3
 		)
 
-		self.burn_duration = 2.8
-		self.burn_damage_ratio = 0.24
-		self.burn_strength_scale = 0.28
-		self.burn_stacks = 5
-		self.knight_bonus_ratio = 0.55
+		self.burn_duration = 3.0
+		self.burn_dps_ratio = 0.35
+		self.knight_bonus_multiplier = 1.35
+		self.regen_multiplier = 2.0
 
-	def on_hit(self, enemy: object, player_strength: int, slash: Slash) -> None:
-		enemy_type = str(getattr(enemy, "enemy_type", ""))
-		apply_burn = getattr(enemy, "apply_burn", None)
-		if not callable(apply_burn):
+	def get_health_regen_multiplier(self) -> float:
+		return self.regen_multiplier
+
+	def resolve_hit_damage(self, target: object, player_strength: int, slash: Slash) -> int:
+		_ = player_strength
+		damage = max(1, int(slash.damage))
+
+		if bool(getattr(target, "is_burning", lambda: False)()):
+			burn_multiplier = 1.5 if str(getattr(target, "enemy_type", "")) == "boss" else 2.0
+			damage = int(round(damage * burn_multiplier))
+
+		if str(getattr(target, "enemy_type", "")) == "knight":
+			damage = int(round(damage * self.knight_bonus_multiplier))
+
+		return max(1, damage)
+
+	def on_hit(self, target: object, player_strength: int, slash: Slash) -> None:
+		_ = player_strength
+		ignite = getattr(target, "ignite", None)
+		if not callable(ignite):
 			return
 
-		dps = int((slash.damage * self.burn_damage_ratio) + (player_strength * self.burn_strength_scale))
-		apply_burn(max(1, dps), self.burn_duration, self.burn_stacks)
-
-		if enemy_type == "knight":
-			take_damage = getattr(enemy, "take_damage", None)
-			if callable(take_damage):
-				bonus_damage = max(6, int(round(slash.damage * self.knight_bonus_ratio)))
-				take_damage(bonus_damage)
+		burn_dps = max(1, int(round(slash.damage * self.burn_dps_ratio)))
+		ignite(burn_dps, self.burn_duration)
 
 
 class IceSword(Sword):
 	def __init__(self) -> None:
 		super().__init__(
 			name="ice",
-			base_damage=20,
-			cooldown=0.78,
+			base_damage=16,
+			cooldown=0.86,
 			radius=96.0,
 			duration=0.24,
 			color=(140, 200, 255),
-			attack_speed_mult=1.0,
+			strength_scale=1.6
 		)
 
-		self.slow_factor = 0.62
-		self.slow_duration = 1.9
-		self.combo_window = 1.8
-		self.combo_bonus_step = 5
-		self.combo_bonus_cap = 20
-		self.combo_strength_scale = 0.25
-		self.freeze_hits = 2
-		self.freeze_duration = 1.0
+		self.freeze_duration = 3.0
+		self.thaw_slow_multiplier = 0.45
+		self.thaw_slow_duration = 3.0
+		self.defense_multiplier = 2.0
 
-	def on_hit(self, enemy: object, player_strength: int, slash: Slash) -> None:
-		combo_stacks = int(getattr(enemy, "ice_hits", 0))
-		enemy_type = str(getattr(enemy, "enemy_type", ""))
+	def get_defense_multiplier(self) -> float:
+		return self.defense_multiplier
 
-		apply_slow = getattr(enemy, "apply_slow", None)
-		if callable(apply_slow):
-			apply_slow(self.slow_factor, self.slow_duration)
+	def resolve_hit_damage(self, target: object, player_strength: int, slash: Slash) -> int:
+		_ = player_strength
+		damage = max(1, int(slash.damage))
 
-		register_hit = getattr(enemy, "register_ice_hit", None)
-		if enemy_type == "archer":
-			if callable(register_hit):
-				register_hit(1, self.freeze_duration + 0.4, 0.0)
+		if bool(getattr(target, "is_frozen", lambda: False)()):
+			damage *= 2
+
+		return max(1, damage)
+
+	def on_hit(self, target: object, player_strength: int, slash: Slash) -> None:
+		_ = (player_strength, slash)
+		freeze = getattr(target, "freeze", None)
+		if not callable(freeze):
 			return
 
-		if combo_stacks > 0:
-			extra_damage = min(
-				self.combo_bonus_cap,
-				int(combo_stacks * self.combo_bonus_step + player_strength * self.combo_strength_scale)
-			)
-			take_damage = getattr(enemy, "take_damage", None)
-			if callable(take_damage) and extra_damage > 0:
-				take_damage(max(1, extra_damage))
-
-		if callable(register_hit):
-			register_hit(self.freeze_hits, self.freeze_duration, self.combo_window)
+		freeze(
+			duration=self.freeze_duration,
+			thaw_slow_multiplier=self.thaw_slow_multiplier,
+			thaw_slow_duration=self.thaw_slow_duration
+		)
 
 
 class WindSword(Sword):
 	def __init__(self) -> None:
 		super().__init__(
 			name="wind",
-			base_damage=7,
-			cooldown=0.64,
-			radius=120.0,
+			base_damage=3,
+			cooldown=0.78,
+			radius=122.0,
 			duration=0.18,
 			color=(170, 240, 210),
-			strength_scale=1.25,
-			hits_per_attack=2,
-			hit_delay=0.07,
-			attack_speed_mult=1.15,
-			move_speed_mult=1.12,
-			shape="circle",
+			strength_scale=0.45,
+			hits_per_attack=3,
+			hit_delay=0.05,
+			attack_speed_mult=1.25,
+			move_speed_mult=1.25,
+			shape="circle"
 		)

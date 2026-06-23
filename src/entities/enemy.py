@@ -6,7 +6,9 @@ from typing import Callable
 
 from src.engine.animation import Animation
 from src.engine.state_machine import StateMachine
+from src.entities.status_effects import StatusEffects
 from src.entities.weapon import Arrow
+from src.utils.types import SurfaceLike
 from src.utils.window import get_screen, scale_surface, blit_surface, create_mask_surface
 from src.utils.rect import Rect
 
@@ -70,20 +72,12 @@ class Enemy:
 		self.scale_multiplier = 1.0
 		self.sprite_scale = self.base_scale * self.scale_multiplier
 		self.state_machine = StateMachine(list(EnemyAction), EnemyAction.IDLE)
-
-		self.slow_factor = 1.0
-		self.slow_timer = 0.0
-		self.burn_dps = 0.0
-		self.burn_timer = 0.0
-		self.freeze_timer = 0.0
-		self.ice_hits = 0
-		self.ice_freeze_hits = 0
-		self.ice_combo_timer = 0.0
+		self.status_effects = StatusEffects()
 
 		self.hit_anim_time_left = 0.0
-		self.burn_damage_popups: list[tuple[int, float, float]] = []
-		self._burn_popup_accumulator = 0.0
-		self._burn_popup_timer = 0.0
+		self.status_damage_popups: list[tuple[int, float, float]] = []
+		self._dot_popup_accumulator = 0.0
+		self._dot_popup_timer = 0.0
 
 		self.idle_action = "IDLE" if "IDLE" in actions else (actions[0] if actions else "")
 		self.walk_action = "WALK" if "WALK" in actions else self.idle_action
@@ -93,6 +87,7 @@ class Enemy:
 		self._draw_cache: dict[tuple[str, int, bool, int, int], object] = {}
 		self._hit_mask_cache: dict[tuple[str, int, bool, int, int], object] = {}
 		self._freeze_mask_cache: dict[tuple[str, int, bool, int, int], object] = {}
+		self._burn_mask_cache: dict[tuple[str, int, bool, int, int], object] = {}
 		self._sync_state_animation()
 
 	def spawn(self, x: float, y: float, speed_multiplier: float = 1.0) -> None:
@@ -103,18 +98,11 @@ class Enemy:
 		self.damage = self.base_damage
 		self.armor = self.base_armor
 		self.damage_multiplier = 1.0
-		self.slow_factor = 1.0
-		self.slow_timer = 0.0
-		self.burn_dps = 0.0
-		self.burn_timer = 0.0
-		self.freeze_timer = 0.0
-		self.ice_hits = 0
-		self.ice_freeze_hits = 0
-		self.ice_combo_timer = 0.0
+		self.status_effects.reset()
 		self.hit_anim_time_left = 0.0
-		self.burn_damage_popups.clear()
-		self._burn_popup_accumulator = 0.0
-		self._burn_popup_timer = 0.0
+		self.status_damage_popups.clear()
+		self._dot_popup_accumulator = 0.0
+		self._dot_popup_timer = 0.0
 		self.set_scale(self.scale_multiplier)
 		self._set_state(EnemyAction.IDLE)
 
@@ -155,14 +143,15 @@ class Enemy:
 		move_target_y: float | None = None
 	) -> None:
 		self._update_statuses(dt)
-		self.animation.update(int(dt * 1000))
 
 		if self.health <= 0:
 			return
 
-		if self.freeze_timer > 0.0:
+		if self.is_frozen():
 			self._set_state(EnemyAction.IDLE)
 			return
+
+		self.animation.update(int(dt * 1000))
 
 		if self.hit_anim_time_left > 0.0:
 			self._set_state(EnemyAction.HIT)
@@ -184,7 +173,7 @@ class Enemy:
 			return
 
 		inv_dist = 1.0 / math.sqrt(move_dist_sq)
-		speed = self.speed * self.slow_factor
+		speed = self.speed * self.status_effects.speed_multiplier()
 
 		self.x += move_dx * inv_dist * speed * dt
 		self.y += move_dy * inv_dist * speed * dt
@@ -197,7 +186,7 @@ class Enemy:
 		if self.health <= 0:
 			return
 
-		if self.freeze_timer > 0.0:
+		if self.is_frozen():
 			self._set_state(EnemyAction.IDLE)
 			return
 
@@ -231,88 +220,60 @@ class Enemy:
 			self.hit_anim_time_left = hit_duration
 			self._set_state(EnemyAction.HIT)
 
-	def apply_burn(self, dps: float, duration: float, stack_cap: int = 1) -> None:
-		dps = max(0.0, float(dps))
-		stack_cap = max(1, int(stack_cap))
+	def ignite(self, dps: float, duration: float = 3.0) -> None:
+		self.status_effects.ignite(dps, duration)
 
-		if self.burn_timer <= 0.0:
-			self.burn_dps = dps
-		else:
-			max_burn_dps = max(self.burn_dps, dps * stack_cap)
-			self.burn_dps = min(max_burn_dps, self.burn_dps + dps)
+	def freeze(
+		self,
+		duration: float = 3.0,
+		thaw_slow_multiplier: float = 0.5,
+		thaw_slow_duration: float = 3.0
+	) -> None:
+		self.status_effects.freeze(duration, thaw_slow_multiplier, thaw_slow_duration)
 
-		self.burn_timer = max(self.burn_timer, duration)
+	def slow(self, multiplier: float, duration: float) -> None:
+		self.status_effects.slow(multiplier, duration)
 
-	def apply_slow(self, slow_factor: float, duration: float) -> None:
-		self.slow_factor = min(self.slow_factor, slow_factor)
-		self.slow_timer = max(self.slow_timer, duration)
+	def is_burning(self) -> bool:
+		return self.status_effects.is_burning()
 
-	def register_ice_hit(self, freeze_hits: int, freeze_duration: float, combo_window: float = 0.0) -> None:
-		if combo_window > 0.0 and self.ice_combo_timer <= 0.0:
-			self.ice_hits = 0
-
-		self.ice_hits += 1
-		self.ice_freeze_hits += 1
-		self.ice_combo_timer = max(self.ice_combo_timer, combo_window)
-
-		if self.ice_freeze_hits >= freeze_hits:
-			self.ice_freeze_hits = 0
-			self.ice_hits = 0
-			self.ice_combo_timer = 0.0
-			self.freeze_timer = max(self.freeze_timer, freeze_duration)
+	def is_frozen(self) -> bool:
+		return self.status_effects.is_frozen()
 
 	def _update_statuses(self, dt: float) -> None:
-		if self.burn_timer > 0.0:
+		burn_damage = self.status_effects.update(dt)
+		if burn_damage > 0.0:
 			before_health = float(self.health)
-			self.burn_timer = max(0.0, self.burn_timer - dt)
-			self.health -= self.burn_dps * dt
-			self._record_burn_damage(before_health - float(self.health), dt)
-
-			if self.burn_timer <= 0.0:
-				self._flush_burn_popup()
-				self.burn_dps = 0.0
-
-		if self.slow_timer > 0.0:
-			self.slow_timer = max(0.0, self.slow_timer - dt)
-
-			if self.slow_timer <= 0.0:
-				self.slow_factor = 1.0
-
-		if self.freeze_timer > 0.0:
-			self.freeze_timer = max(0.0, self.freeze_timer - dt)
-
-		if self.ice_combo_timer > 0.0:
-			self.ice_combo_timer = max(0.0, self.ice_combo_timer - dt)
-			if self.ice_combo_timer <= 0.0:
-				self.ice_hits = 0
+			self.health = max(0.0, self.health - burn_damage)
+			self._record_dot_damage(before_health - float(self.health), dt)
 
 		if self.hit_anim_time_left > 0.0:
 			self.hit_anim_time_left = max(0.0, self.hit_anim_time_left - dt)
 
-	def _record_burn_damage(self, amount: float, dt: float) -> None:
+	def _record_dot_damage(self, amount: float, dt: float) -> None:
 		if amount <= 0.0:
 			return
 
-		self._burn_popup_accumulator += amount
-		self._burn_popup_timer += dt
+		self._dot_popup_accumulator += amount
+		self._dot_popup_timer += dt
 
-		if self._burn_popup_accumulator >= 1.0 and self._burn_popup_timer >= 0.3:
-			self._flush_burn_popup()
+		if self._dot_popup_accumulator >= 1.0 and self._dot_popup_timer >= 0.3:
+			self._flush_dot_popup()
 
-	def _flush_burn_popup(self) -> None:
-		if self._burn_popup_accumulator < 0.5:
-			self._burn_popup_accumulator = 0.0
-			self._burn_popup_timer = 0.0
+	def _flush_dot_popup(self) -> None:
+		if self._dot_popup_accumulator < 0.5:
+			self._dot_popup_accumulator = 0.0
+			self._dot_popup_timer = 0.0
 			return
 
 		center_x, center_y = self.center
-		self.burn_damage_popups.append((
-			max(1, int(round(self._burn_popup_accumulator))),
+		self.status_damage_popups.append((
+			max(1, int(round(self._dot_popup_accumulator))),
 			float(center_x),
 			float(center_y) - float(self.height) * 0.35
 		))
-		self._burn_popup_accumulator = 0.0
-		self._burn_popup_timer = 0.0
+		self._dot_popup_accumulator = 0.0
+		self._dot_popup_timer = 0.0
 
 	def is_dead(self) -> bool:
 		return self.health <= 0
@@ -330,8 +291,16 @@ class Enemy:
 			mask_surf = self._get_mask_frame(frame, self._hit_mask_cache, (255, 255, 255, 120))
 			blit_surface(mask_surf, (self.x - camera_x, self.y - camera_y), target=screen)
 
-		if self.freeze_timer > 0.0:
-			mask_surf = self._get_mask_frame(frame, self._freeze_mask_cache, (80, 160, 255, 120))
+		if self.is_burning():
+			mask_surf = self._get_mask_frame(frame, self._burn_mask_cache, (255, 45, 45, 95))
+			blit_surface(mask_surf, (self.x - camera_x, self.y - camera_y), target=screen)
+
+		if self.is_burning() and self.status_effects.burn_flash_visible():
+			mask_surf = self._get_mask_frame(frame, self._burn_mask_cache, (255, 110, 60, 175))
+			blit_surface(mask_surf, (self.x - camera_x, self.y - camera_y), target=screen)
+
+		if self.is_frozen():
+			mask_surf = self._get_mask_frame(frame, self._freeze_mask_cache, (90, 170, 255, 145))
 			blit_surface(mask_surf, (self.x - camera_x, self.y - camera_y), target=screen)
 
 	def _get_draw_frame(self, frame, flip_x: bool):
@@ -361,7 +330,8 @@ class Enemy:
 			self.animation.current_index,
 			self.facing_dir < 0,
 			int(self.width),
-			int(self.height)
+			int(self.height),
+			color
 		)
 
 		cached = cache.get(key)
@@ -378,15 +348,15 @@ class Soldier(Enemy):
 		self,
 		sprite_path: str | Path,
 		is_ranged: bool,
-		base_health: int = 60,
-		base_speed: float = 120.0,
-		base_damage: int = 22,
+		base_health: int = 72,
+		base_speed: float = 126.0,
+		base_damage: int = 28,
 		xp_value: int = 8
 	) -> None:
 		if is_ranged:
-			base_health = 35
-			base_speed = 145.0
-			base_damage = 38
+			base_health = 46
+			base_speed = 152.0
+			base_damage = 44
 			xp_value = 10
 
 		armor = 0.05 if is_ranged else 0.20
@@ -441,17 +411,17 @@ class Soldier(Enemy):
 		move_target_y: float | None = None
 	) -> None:
 		self._update_statuses(dt)
-		self.animation.update(int(dt * 1000))
-
-		self.attack_timer = max(0.0, self.attack_timer - dt * self.slow_factor)
-		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
 
 		if self.health <= 0:
 			return
 
-		if self.freeze_timer > 0.0:
+		if self.is_frozen():
 			self._set_state(EnemyAction.IDLE)
 			return
+
+		self.animation.update(int(dt * 1000))
+		self.attack_timer = max(0.0, self.attack_timer - dt * self.status_effects.speed_multiplier())
+		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
 
 		if self.hit_anim_time_left > 0.0:
 			self._set_state(EnemyAction.HIT)
@@ -511,7 +481,7 @@ class Soldier(Enemy):
 
 				damage_fn = getattr(player, "take_damage", None)
 				if callable(damage_fn):
-					damage_fn(self.damage)
+					damage_fn(self.damage, damage_type="melee")
 			else:
 				self._set_state(EnemyAction.IDLE)
 			return
@@ -528,7 +498,7 @@ class Soldier(Enemy):
 			return
 
 		inv_dist = 1.0 / math.sqrt(move_dist_sq)
-		speed = self.speed * self.slow_factor
+		speed = self.speed * self.status_effects.speed_multiplier()
 
 		self.x += move_dx * inv_dist * speed * dt
 		self.y += move_dy * inv_dist * speed * dt
@@ -538,10 +508,10 @@ class Soldier(Enemy):
 	def update_culled(self, dt: float) -> None:
 		super().update_culled(dt)
 
-		if self.health <= 0:
+		if self.health <= 0 or self.is_frozen():
 			return
 
-		self.attack_timer = max(0.0, self.attack_timer - dt * self.slow_factor)
+		self.attack_timer = max(0.0, self.attack_timer - dt * self.status_effects.speed_multiplier())
 		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
 
 		if self.pending_ranged_shot and self.attack_anim_time_left <= 0.0:
@@ -604,9 +574,9 @@ class Knight(Enemy):
 	def __init__(
 		self,
 		sprite_path: str | Path,
-		base_health: int = 100,
-		base_speed: float = 80.0,
-		base_damage: int = 36,
+		base_health: int = 132,
+		base_speed: float = 86.0,
+		base_damage: int = 46,
 		xp_value: int = 15
 	) -> None:
 		super().__init__(
@@ -674,22 +644,24 @@ class Knight(Enemy):
 		move_target_y: float | None = None
 	) -> None:
 		self._update_statuses(dt)
-		self.animation.update(int(dt * 1000))
-		self.attack_timer = max(0.0, self.attack_timer - dt * self.slow_factor)
-		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
 
 		if self.health <= 0:
 			return
+
+		if self.is_frozen():
+			self.guard_timer = 0.0
+			self._set_state(EnemyAction.IDLE)
+			return
+
+		self.animation.update(int(dt * 1000))
+		self.attack_timer = max(0.0, self.attack_timer - dt * self.status_effects.speed_multiplier())
+		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
 
 		if self.guard_timer > 0.0:
 			self.guard_timer = max(0.0, self.guard_timer - dt)
 
 		if self.guard_cooldown_timer > 0.0:
 			self.guard_cooldown_timer = max(0.0, self.guard_cooldown_timer - dt)
-
-		if self.freeze_timer > 0.0:
-			self._set_state(EnemyAction.IDLE)
-			return
 
 		if self.hit_anim_time_left > 0.0:
 			self._set_state(EnemyAction.HIT)
@@ -729,7 +701,7 @@ class Knight(Enemy):
 
 				damage_fn = getattr(player, "take_damage", None)
 				if callable(damage_fn):
-					damage_fn(self.damage)
+					damage_fn(self.damage, damage_type="melee")
 			else:
 				self._set_state(EnemyAction.IDLE)
 			return
@@ -746,7 +718,7 @@ class Knight(Enemy):
 			return
 
 		inv_dist = 1.0 / math.sqrt(move_dist_sq)
-		speed = self.speed * self.slow_factor
+		speed = self.speed * self.status_effects.speed_multiplier()
 		self.x += move_dx * inv_dist * speed * dt
 		self.y += move_dy * inv_dist * speed * dt
 		self._set_state(EnemyAction.WALK)
@@ -754,10 +726,12 @@ class Knight(Enemy):
 	def update_culled(self, dt: float) -> None:
 		super().update_culled(dt)
 
-		if self.health <= 0:
+		if self.health <= 0 or self.is_frozen():
+			if self.is_frozen():
+				self.guard_timer = 0.0
 			return
 
-		self.attack_timer = max(0.0, self.attack_timer - dt * self.slow_factor)
+		self.attack_timer = max(0.0, self.attack_timer - dt * self.status_effects.speed_multiplier())
 		self.attack_anim_time_left = max(0.0, self.attack_anim_time_left - dt)
 		self.guard_timer = max(0.0, self.guard_timer - dt)
 		self.guard_cooldown_timer = max(0.0, self.guard_cooldown_timer - dt)
@@ -838,9 +812,7 @@ class EnemyManager:
 			self.arrow_sprite = loaded_arrow
 
 		self.arrow_radius = max(4.0, min(self.arrow_sprite.get_width(), self.arrow_sprite.get_height()) * 0.35)
-		from typing import Any
-
-		self._arrow_rotation_cache: dict[int, Any] = {}
+		self._arrow_rotation_cache: dict[int, SurfaceLike] = {}
 		self._static_colliders: list[object] = []
 		self._static_collider_cell_size = 192.0
 		self._static_collider_cells: dict[tuple[int, int], list[object]] = {}
@@ -857,8 +829,8 @@ class EnemyManager:
 		self.spawn_growth = spawn_growth
 		self.max_spawn_rate = max_spawn_rate
 		self.spawn_rate_multiplier = 1.0
-		self.damage_bonus_per_minute = 0.10
-		self.damage_bonus_per_ten_player_levels = 0.08
+		self.damage_bonus_per_minute = 0.12
+		self.damage_bonus_per_ten_player_levels = 0.10
 		self.max_active_enemies = max(20, int(max_active_enemies))
 		self._frame_index = 0
 		self.sprite_scale = 2.0
@@ -950,6 +922,9 @@ class EnemyManager:
 
 	def set_spawn_rate_multiplier(self, multiplier: float) -> None:
 		self.spawn_rate_multiplier = max(0.0, float(multiplier))
+
+	def clear_spawn_budget(self) -> None:
+		self.spawn_budget = 0.0
 
 	def set_scale(self, scale: float) -> None:
 		self.sprite_scale = max(0.1, scale)
@@ -1343,7 +1318,8 @@ class EnemyManager:
 					damage_fn(
 						arrow.damage,
 						defense_pierce=float(getattr(arrow, "armor_pierce", 0.0)),
-						bonus_vs_defense=float(getattr(arrow, "bonus_vs_defense", 0.0))
+						bonus_vs_defense=float(getattr(arrow, "bonus_vs_defense", 0.0)),
+						damage_type="projectile"
 					)
 
 				continue

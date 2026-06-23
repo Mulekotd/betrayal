@@ -1,166 +1,167 @@
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Any, List, Tuple
+from typing import Callable
 
 from src.utils.rect import Rect
-from src.utils.window import load_image, scale_surface, create_surface
+from src.utils.types import SurfaceLike
+from src.utils.window import create_surface, load_image, scale_surface
 
 
 class Tile:
-    def __init__(self, image: Any) -> None:
-        self.image = image
-        self.width = image.get_width()
-        self.height = image.get_height()
+	def __init__(self, image: SurfaceLike) -> None:
+		self.image = image
+		self.width = image.get_width()
+		self.height = image.get_height()
 
 
 class TileObject:
-    def __init__(self, tile: Tile, x: float, y: float, collidable: bool = False) -> None:
-        self.tile = tile
-        self.left = float(x)
-        self.top = float(y)
-        self.width = float(tile.width)
-        self.height = float(tile.height)
-        self.rect = Rect(self.left, self.top, self.width, self.height)
-        self.collidable = collidable
+	def __init__(self, tile: Tile, x: float, y: float, collidable: bool = False) -> None:
+		self.tile = tile
+		self.left = float(x)
+		self.top = float(y)
+		self.width = float(tile.width)
+		self.height = float(tile.height)
+		self.rect = Rect(self.left, self.top, self.width, self.height)
+		self.collidable = collidable
 
-    @property
-    def x(self) -> float:
-        return self.left
+	@property
+	def x(self) -> float:
+		return self.left
 
-    @property
-    def y(self) -> float:
-        return self.top
+	@property
+	def y(self) -> float:
+		return self.top
 
-    def draw(self, camera_x: float = 0.0, camera_y: float = 0.0) -> None:
-        from src.utils.window import blit_surface
+	def draw(self, camera_x: float = 0.0, camera_y: float = 0.0) -> None:
+		from src.utils.window import blit_surface
 
-        draw_x = int(self.left - camera_x)
-        draw_y = int(self.top - camera_y)
-
-        blit_surface(self.tile.image, (draw_x, draw_y))
+		blit_surface(self.tile.image, (int(self.left - camera_x), int(self.top - camera_y)))
 
 
 class TileSet:
-    def __init__(
-        self,
-        tileset_path: Path | str,
-        tile_width: int = 0,
-        tile_height: int = 0,
-        gap: int = 0,
-        tile_scale: float = 1.0,
-        load_image_fn=load_image,
-        create_surface_fn=create_surface,
-        scale_surface_fn=scale_surface,
-    ) -> None:
-        path = Path(tileset_path)
-        self.path = path
-        self.tiles: List[Tile] = []
-        self._load_image = load_image_fn
-        self._create_surface = create_surface_fn
-        self._scale_surface = scale_surface_fn
+	def __init__(
+		self,
+		tileset_path: Path | str,
+		tile_width: int = 0,
+		tile_height: int = 0,
+		gap: int = 0,
+		tile_scale: float = 1.0,
+		load_image_fn: Callable[[Path | str, bool], SurfaceLike] = load_image,
+		create_surface_fn: Callable[[int, int, bool], SurfaceLike] = create_surface,
+		scale_surface_fn: Callable[[SurfaceLike, int, int, bool], SurfaceLike] = scale_surface,
+	) -> None:
+		self.path = Path(tileset_path)
+		self.tiles: list[Tile] = []
+		self._load_image = load_image_fn
+		self._create_surface = create_surface_fn
+		self._scale_surface = scale_surface_fn
 
-        full = self._load_image(str(path))
-        fw, fh = full.get_width(), full.get_height()
+		full = self._load_image(self.path, True)
+		full_width = full.get_width()
+		full_height = full.get_height()
 
-        # If tile size provided, slice as grid; otherwise auto-detect by alpha connected components
-        if tile_width and tile_height and tile_width > 0 and tile_height > 0:
-            self._slice_grid(full, fw, fh, tile_width, tile_height, gap, tile_scale)
-        else:
-            self._slice_by_alpha(full, fw, fh, gap, tile_scale)
+		if tile_width > 0 and tile_height > 0:
+			self._slice_grid(full, full_width, full_height, tile_width, tile_height, gap, tile_scale)
+		else:
+			self._slice_by_alpha(full, full_width, full_height, tile_scale)
 
-    def _slice_grid(self, full: Any, fw: int, fh: int, tw: int, th: int, gap: int, scale: float) -> None:
-        # ------------------------------------------------------------------ #
-        # Fixed grid slicing                                                 #
-        # ------------------------------------------------------------------ #
-        y = 0
+	def _slice_grid(
+		self,
+		full: SurfaceLike,
+		full_width: int,
+		full_height: int,
+		tile_width: int,
+		tile_height: int,
+		gap: int,
+		scale: float,
+	) -> None:
+		# Quando a folha já está organizada em grade, iteramos com passos fixos para evitar heurística.
+		y = 0
+		while y + tile_height <= full_height:
+			x = 0
+			while x + tile_width <= full_width:
+				surface = self._create_surface(tile_width, tile_height, True)
+				surface.blit(full, (0, 0), (x, y, tile_width, tile_height))
+				self.tiles.append(Tile(self._scale_if_needed(surface, scale)))
 
-        while y + th <= fh:
-            x = 0
-            while x + tw <= fw:
-                surf = self._create_surface(tw, th, alpha=True)
-                surf.blit(full, (0, 0), (x, y, tw, th))
+				if tile_width == full_width:
+					break
 
-                if scale != 1.0:
-                    surf = self._scale_surface(surf, int(tw * scale), int(th * scale))
+				x += tile_width + gap
 
-                self.tiles.append(Tile(surf))
-                if tw == fw:
-                    break
+			if tile_height == full_height:
+				break
 
-                x += tw + gap
+			y += tile_height + gap
 
-            if th == fh:
-                break
+	def _slice_by_alpha(self, full: SurfaceLike, full_width: int, full_height: int, scale: float) -> None:
+		visited = [[False] * full_height for _ in range(full_width)]
+		neighbors = ((1, 0), (-1, 0), (0, 1), (0, -1))
 
-            y += th + gap
+		def alpha_at(x: int, y: int) -> int:
+			return full.get_at((x, y))[3]
 
-    def _slice_by_alpha(self, full: Any, fw: int, fh: int, gap: int, scale: float) -> None:
-        # ------------------------------------------------------------------ #
-        # Alpha-connected slicing                                             #
-        # ------------------------------------------------------------------ #
-        visited = [[False] * fh for _ in range(fw)]
+		for x in range(full_width):
+			for y in range(full_height):
+				if visited[x][y]:
+					continue
 
-        def get_alpha(x: int, y: int) -> int:
-            return full.get_at((x, y))[3]
+				if alpha_at(x, y) == 0:
+					visited[x][y] = True
+					continue
 
-        neighbors = ((1, 0), (-1, 0), (0, 1), (0, -1))
+				stack: list[tuple[int, int]] = [(x, y)]
+				visited[x][y] = True
+				min_x = max_x = x
+				min_y = max_y = y
 
-        for x in range(fw):
-            for y in range(fh):
-                if visited[x][y]:
-                    continue
+				# A busca por componente conectado encontra cada sprite sem depender de grade fixa.
+				while stack:
+					source_x, source_y = stack.pop()
+					if alpha_at(source_x, source_y) == 0:
+						continue
 
-                if get_alpha(x, y) == 0:
-                    visited[x][y] = True
-                    continue
+					min_x = min(min_x, source_x)
+					max_x = max(max_x, source_x)
+					min_y = min(min_y, source_y)
+					max_y = max(max_y, source_y)
 
-                stack: List[Tuple[int, int]] = [(x, y)]
-                visited[x][y] = True
-                minx, maxx = x, x
-                miny, maxy = y, y
+					for offset_x, offset_y in neighbors:
+						next_x = source_x + offset_x
+						next_y = source_y + offset_y
+						if not (0 <= next_x < full_width and 0 <= next_y < full_height):
+							continue
 
-                while stack:
-                    sx, sy = stack.pop()
-                    a = get_alpha(sx, sy)
+						if visited[next_x][next_y]:
+							continue
 
-                    if a == 0:
-                        continue
+						visited[next_x][next_y] = True
+						if alpha_at(next_x, next_y) != 0:
+							stack.append((next_x, next_y))
 
-                    if sx < minx:
-                        minx = sx
-                    if sx > maxx:
-                        maxx = sx
-                    if sy < miny:
-                        miny = sy
-                    if sy > maxy:
-                        maxy = sy
+				box_width = max_x - min_x + 1
+				box_height = max_y - min_y + 1
+				if box_width < 4 and box_height < 4:
+					continue
 
-                    for dx, dy in neighbors:
-                        nx, ny = sx + dx, sy + dy
-                        
-                        if 0 <= nx < fw and 0 <= ny < fh and not visited[nx][ny]:
-                            visited[nx][ny] = True
+				surface = self._create_surface(box_width, box_height, True)
+				surface.blit(full, (0, 0), (min_x, min_y, box_width, box_height))
+				self.tiles.append(Tile(self._scale_if_needed(surface, scale)))
 
-                            if get_alpha(nx, ny) != 0:
-                                stack.append((nx, ny))
+	def _scale_if_needed(self, surface: SurfaceLike, scale: float) -> SurfaceLike:
+		if scale == 1.0:
+			return surface
 
-                bw = maxx - minx + 1
-                bh = maxy - miny + 1
+		return self._scale_surface(
+			surface,
+			int(surface.get_width() * scale),
+			int(surface.get_height() * scale),
+			False,
+		)
 
-                if bw < 4 and bh < 4:
-                    continue
-
-                # Extract surface
-                surf = self._create_surface(bw, bh, alpha=True)
-                surf.blit(full, (0, 0), (minx, miny, bw, bh))
-
-                if scale != 1.0:
-                    surf = self._scale_surface(surf, int(bw * scale), int(bh * scale))
-
-                self.tiles.append(Tile(surf))
-
-    def create_object(self, index: int, x: float, y: float, collidable: bool = False) -> TileObject:
-        tile = self.tiles[index]
-        return TileObject(tile, x, y, collidable=collidable)
+	def create_object(self, index: int, x: float, y: float, collidable: bool = False) -> TileObject:
+		return TileObject(self.tiles[index], x, y, collidable=collidable)
 
 
 __all__ = ["TileSet", "TileObject", "Tile"]

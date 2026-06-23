@@ -2,26 +2,29 @@ from __future__ import annotations
 
 import math
 import random
-
+from typing import TYPE_CHECKING, Callable
 
 from src.engine.camera import Camera
 from src.engine.world import World
 from src.entities.boss import Boss
 from src.entities.enemy import EnemyManager
 from src.entities.player import Player
-from src.entities.weapon import Slash, FireSword, IceSword, WindSword
-from src.system.input import Input
 from src.system.hud import HUD
+from src.system.input import Input
 from src.ui.damage_numbers import DamageNumbers
 from src.ui.pause_menu import PauseMenu
-from src.utils.services import GameServices
-from src.utils.window import get_screen, get_window
-from src.utils.window import load_image, create_surface, draw_rect, blit_surface, set_mouse_visible, scale_surface, draw_arc, draw_circle
 from src.utils.rect import Rect
+from src.utils.services import GameServices
+from src.utils.types import SurfaceLike
+from src.utils.window import blit_surface, create_surface, draw_arc, draw_circle, draw_line, draw_rect, get_screen, get_window, load_image, scale_surface, set_mouse_visible
+from src.entities.weapon import FireSword, IceSword, Slash, Sword, WindSword
+
+if TYPE_CHECKING:
+	from src.game import Game
 
 
 class GameScene:
-	def __init__(self, services: GameServices, world_width: int, world_height: int, game: object | None = None) -> None:
+	def __init__(self, services: GameServices, world_width: int, world_height: int, game: Game | None = None) -> None:
 		self.game = game
 		self.services = services
 		assets_dir = self.services.images_dir
@@ -58,8 +61,6 @@ class GameScene:
 			spawn_x=spawn_x,
 			spawn_y=spawn_y
 		)
-
-		self.player.init_progression()
 
 		self.enemy_manager = EnemyManager(
 			assets_dir=assets_dir,
@@ -107,7 +108,7 @@ class GameScene:
 		)
 
 		self.level_up_icon_size = 38
-		self.level_up_icon = None
+		self.level_up_icon: SurfaceLike | None = None
 		level_up_icon_path = self.services.images_dir / "health_up.png"
 
 		if level_up_icon_path.exists():
@@ -120,7 +121,7 @@ class GameScene:
 					smooth=True
 				)
 
-		self.level_up_icons: dict[str, object] = {}
+		self.level_up_icons: dict[str, SurfaceLike] = {}
 		upgrade_dir = self.services.images_dir / "upgrades"
 		upgrade_icon_files = {
 			"max_health":   "health_up.png",
@@ -147,21 +148,21 @@ class GameScene:
 		self.weapon_timer = 0.0
 		self.run_time: float = 0.0
 		self.weapon_slashes: list[Slash] = []
-		self._slash_arc_cache: dict[tuple[int, int, int, int, int, tuple[int, int, int], int], object] = {}
-		self._slash_circle_cache: dict[tuple[int, int, tuple[int, int, int], int], object] = {}
+		self._slash_arc_cache: dict[tuple[int, int, int, int, int, tuple[int, int, int], int], SurfaceLike] = {}
+		self._slash_circle_cache: dict[tuple[int, int, tuple[int, int, int], int], SurfaceLike] = {}
 		self.enemy_activity_margin_x = max(220.0, self.viewport_width * 0.45)
 		self.enemy_activity_margin_y = max(180.0, self.viewport_height * 0.45)
 		self.show_fps = False
-		self.swords = {
+		self.swords: dict[str, Sword] = {
 			"fire": FireSword(),
 			"ice": IceSword(),
 			"wind": WindSword()
 		}
 		self.boss: Boss | None = None
 		self.boss_spawned = False
-		self.boss_spawn_time = 600.0
+		self.boss_spawn_time = 180.0
 		self.boss_slashes: list[Slash] = []
-		self.boss_spawn_rate_multiplier = 0.42
+		self.boss_spawn_rate_multiplier = 0.08
 		self.victory_active = False
 		self.victory_hover: int | None = None
 
@@ -169,7 +170,7 @@ class GameScene:
 		self.game_over_title_font = self.services.fonts.get(68)
 		self.game_over_hint_font = self.services.fonts.get(24)
 
-		# Play theme music when game scene starts
+		# Iniciamos a trilha aqui para o menu poder reutilizar a mesma instância de áudio.
 		if self.game and self.game.audio:
 			self.game.audio.play_sound("theme", repeat=True)
 
@@ -208,6 +209,7 @@ class GameScene:
 			return
 
 		self._handle_weapon_selection(input_manager)
+		self._apply_current_weapon_modifiers()
 		self.player.update(
 			input_manager,
 			dt,
@@ -284,6 +286,7 @@ class GameScene:
 		self.player.draw(camera_x=self.camera.x, camera_y=self.camera.y)
 		self._draw_player_slashes()
 		self.damage_numbers.draw(self.camera.x, self.camera.y)
+		self._draw_boss_direction_indicator()
 		self.hud.draw(
 			self.player,
 			self.total_kills,
@@ -345,7 +348,7 @@ class GameScene:
 		if self.game is None:
 			return
 
-		# Stop theme music when quitting to menu
+		# Encerramos a trilha antes de recriar o menu para evitar sobreposição de playback.
 		if self.game.audio:
 			self.game.audio.stop_sound("theme")
 
@@ -367,7 +370,6 @@ class GameScene:
 			spawn_x=float(self.world.bounds.centerx),
 			spawn_y=float(self.world.bounds.centery)
 		)
-		self.player.init_progression()
 
 		self.enemy_manager = EnemyManager(
 			assets_dir=assets_dir,
@@ -427,7 +429,7 @@ class GameScene:
 		self.pending_level_ups = 0
 		self.pause_menu.close()
 
-	def _victory_buttons(self) -> list[tuple[str, Rect, object]]:
+	def _victory_buttons(self) -> list[tuple[str, Rect, Callable[[], None]]]:
 		button_w = 250
 		button_h = 56
 		gap = 18
@@ -500,7 +502,7 @@ class GameScene:
 			if picked is not None:
 				self.weapon_type = picked
 
-	def _current_sword(self):
+	def _current_sword(self) -> Sword | None:
 		return self.swords.get(self.weapon_type)
 
 	def _current_move_speed_multiplier(self) -> float:
@@ -510,6 +512,24 @@ class GameScene:
 
 		return float(getattr(sword, "get_move_speed_multiplier", lambda: 1.0)())
 
+	def _current_attack_speed_multiplier(self) -> float:
+		sword = self._current_sword()
+		if sword is None:
+			return 1.0
+
+		return float(getattr(sword, "get_attack_speed_multiplier", lambda: 1.0)())
+
+	def _apply_current_weapon_modifiers(self) -> None:
+		sword = self._current_sword()
+		if sword is None:
+			self.player.set_combat_modifiers()
+			return
+
+		self.player.set_combat_modifiers(
+			defense_multiplier=float(getattr(sword, "get_defense_multiplier", lambda: 1.0)()),
+			health_regen_multiplier=float(getattr(sword, "get_health_regen_multiplier", lambda: 1.0)())
+		)
+
 	def _is_boss_active(self) -> bool:
 		return self.boss is not None and not self.boss.is_dead()
 
@@ -518,14 +538,15 @@ class GameScene:
 			return
 
 		boss = Boss(self.services.images_dir / "boss_spritesheet.png")
-		spawn_x, spawn_y = self.enemy_manager.sample_spawn_position(
-			boss,
-			target_x=float(self.player.center[0]),
-			target_y=float(self.player.center[1])
-		)
+		self.world.clear_area(self.world.boss_arena_rect())
+		self.enemy_manager.set_static_colliders(self.world.static_colliders)
+
+		spawn_x = float(self.world.bounds.centerx - boss.width * 0.5)
+		spawn_y = float(self.world.bounds.centery - boss.height * 0.5)
 		boss.spawn(spawn_x, spawn_y)
 		self.boss = boss
 		self.boss_spawned = True
+		self.enemy_manager.clear_spawn_budget()
 
 	def _update_boss(self, dt: float) -> int:
 		if self.boss is None:
@@ -547,7 +568,7 @@ class GameScene:
 			return 0
 
 		xp_reward = int(getattr(self.boss, "xp_value", 0))
-		self._spawn_enemy_burn_popups(self.boss)
+		self._spawn_enemy_status_popups(self.boss)
 		self.boss = None
 		self.boss_slashes = []
 		self._activate_victory()
@@ -562,14 +583,14 @@ class GameScene:
 		if sword is None:
 			return
 
-		attack_speed = float(self.player.attributes.get("attack_speed", 1.0))
+		attack_speed = float(self.player.attributes.get("attack_speed", 1.0)) * self._current_attack_speed_multiplier()
 
 		self.weapon_timer = max(0.0, self.weapon_timer - dt)
 		if self.weapon_timer <= 0.0 and not self.player.is_guarding():
 			self.weapon_slashes.extend(sword.spawn_slashes(self.player))
 			self.weapon_timer = sword.get_cooldown(attack_speed)
 
-			# Play slash sound effect
+			# O som acompanha o disparo do slash, não o impacto, para manter o feedback responsivo.
 			sound_key = f"{self.weapon_type}_slash"
 			if self.game and self.game.audio:
 				self.game.audio.play_sound(sound_key)
@@ -665,7 +686,12 @@ class GameScene:
 			damage_fn = getattr(enemy, "take_damage", None)
 			if callable(damage_fn):
 				before_health = float(getattr(enemy, "health", 0.0))
-				damage_fn(slash.damage)
+				resolve_hit_damage = getattr(slash, "resolve_hit_damage", None)
+				hit_damage = int(slash.damage)
+				if callable(resolve_hit_damage):
+					hit_damage = max(1, int(resolve_hit_damage(enemy, player_strength, slash)))
+
+				damage_fn(hit_damage)
 
 				if slash.on_hit is not None:
 					slash.on_hit(enemy, player_strength, slash)
@@ -707,7 +733,12 @@ class GameScene:
 			if abs(angle_diff) > math.radians(slash.arc_deg * 0.5):
 				return
 
-		took_damage = self.player.take_damage(slash.damage)
+		resolve_hit_damage = getattr(slash, "resolve_hit_damage", None)
+		hit_damage = int(slash.damage)
+		if callable(resolve_hit_damage):
+			hit_damage = max(1, int(resolve_hit_damage(self.player, 0, slash)))
+
+		took_damage = self.player.take_damage(hit_damage, damage_type="melee")
 		if took_damage and slash.on_hit is not None:
 			slash.on_hit(self.player, 0, slash)
 
@@ -729,13 +760,13 @@ class GameScene:
 
 	def _drain_enemy_damage_popups(self) -> None:
 		for enemy in self.enemy_manager.get_enemies():
-			self._spawn_enemy_burn_popups(enemy)
+			self._spawn_enemy_status_popups(enemy)
 
 		if self.boss is not None:
-			self._spawn_enemy_burn_popups(self.boss)
+			self._spawn_enemy_status_popups(self.boss)
 
-	def _spawn_enemy_burn_popups(self, enemy: object) -> None:
-		popups = getattr(enemy, "burn_damage_popups", None)
+	def _spawn_enemy_status_popups(self, enemy: object) -> None:
+		popups = getattr(enemy, "status_damage_popups", None)
 		if not popups:
 			return
 
@@ -775,7 +806,55 @@ class GameScene:
 				target=screen
 			)
 
-	def _get_slash_arc_surface(self, slash: Slash, alpha: int) -> tuple[object, float, int]:
+	def _draw_boss_direction_indicator(self) -> None:
+		if not self._is_boss_active() or self.boss is None:
+			return
+
+		boss_left = self.boss.x - self.camera.x
+		boss_top = self.boss.y - self.camera.y
+		boss_right = boss_left + self.boss.width
+		boss_bottom = boss_top + self.boss.height
+		if boss_right >= 0 and boss_left <= self.viewport_width and boss_bottom >= 0 and boss_top <= self.viewport_height:
+			return
+
+		screen = get_screen()
+		center_x = self.viewport_width * 0.5
+		center_y = self.viewport_height * 0.5
+		boss_x, boss_y = self.boss.center
+		dir_x = boss_x - (self.camera.x + center_x)
+		dir_y = boss_y - (self.camera.y + center_y)
+		length = max(0.0001, math.hypot(dir_x, dir_y))
+		dir_x /= length
+		dir_y /= length
+
+		margin = 54.0
+		half_w = max(1.0, center_x - margin)
+		half_h = max(1.0, center_y - margin)
+		scale_x = half_w / max(0.0001, abs(dir_x))
+		scale_y = half_h / max(0.0001, abs(dir_y))
+		scale = min(scale_x, scale_y)
+
+		tip_x = center_x + dir_x * scale
+		tip_y = center_y + dir_y * scale
+		tail_x = tip_x - dir_x * 30.0
+		tail_y = tip_y - dir_y * 30.0
+		angle = math.atan2(dir_y, dir_x)
+
+		left_wing = angle + math.pi - 0.65
+		right_wing = angle + math.pi + 0.65
+		wing_length = 18.0
+		left_x = tip_x + math.cos(left_wing) * wing_length
+		left_y = tip_y + math.sin(left_wing) * wing_length
+		right_x = tip_x + math.cos(right_wing) * wing_length
+		right_y = tip_y + math.sin(right_wing) * wing_length
+
+		draw_circle((25, 18, 12, 170), (tip_x, tip_y), 24, target=screen)
+		draw_line((255, 226, 112), (tail_x, tail_y), (tip_x, tip_y), width=6, target=screen)
+		draw_line((255, 226, 112), (tip_x, tip_y), (left_x, left_y), width=5, target=screen)
+		draw_line((255, 226, 112), (tip_x, tip_y), (right_x, right_y), width=5, target=screen)
+		draw_line((95, 38, 24), (tail_x, tail_y), (tip_x, tip_y), width=2, target=screen)
+
+	def _get_slash_arc_surface(self, slash: Slash, alpha: int) -> tuple[SurfaceLike, float, int]:
 		center_angle_deg = int(round(math.degrees(math.atan2(slash.dir_y, slash.dir_x)))) % 360
 		arc_deg = int(round(slash.arc_deg))
 		radius = float(slash.radius)
@@ -812,7 +891,7 @@ class GameScene:
 
 		return arc_surface, radius, pad
 
-	def _get_slash_circle_surface(self, slash: Slash, alpha: int) -> tuple[object, float, int]:
+	def _get_slash_circle_surface(self, slash: Slash, alpha: int) -> tuple[SurfaceLike, float, int]:
 		radius = float(slash.radius)
 		pad = int(slash.line_width + 2)
 		alpha_bucket = max(0, min(255, int(round(alpha / 16.0) * 16)))

@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Iterable
 
-from typing import Any
-
+from src.utils.types import SurfaceLike
 from src.utils.window import create_surface, flip_surface, load_image
 
 
@@ -14,23 +15,21 @@ class Animation:
 		height: int,
 		gap: int,
 		actions: Iterable[str],
-		frame_rate: int = 120
+		frame_rate: int = 120,
 	) -> None:
 		self.sprite_path = Path(sprite_path)
-		self.sheet = load_image(str(self.sprite_path), alpha=True)
+		self.sheet = load_image(self.sprite_path, alpha=True)
 
 		self.frame_rate = max(1, frame_rate)
 		self.frame_width = max(0, int(width))
 		self.frame_height = max(0, int(height))
-		self.frames: dict[str, list[Any]] = {}
-		
+		self.frames: dict[str, list[SurfaceLike]] = {}
+
 		self.gap = max(0, int(gap))
 		self.gap_tolerance = max(1, min(4, self.gap if self.gap > 0 else 1))
-
 		self.actions = list(actions)
 		self.alpha_threshold = 1
-
-		self._flip_cache: dict[tuple[str, int, bool, bool], Any] = {}
+		self._flip_cache: dict[tuple[str, int, bool, bool], SurfaceLike] = {}
 
 		if self.frame_width > 0 and self.frame_height > 0:
 			self._slice_hybrid()
@@ -62,44 +61,36 @@ class Animation:
 			self.elapsed_ms -= self.frame_rate
 			self.current_index = (self.current_index + 1) % len(frames)
 
-	def get_frame(self) -> Any | None:
+	def get_frame(self) -> SurfaceLike | None:
 		frames = self.frames.get(self.current_action, [])
 		if not frames:
 			return None
 
 		return frames[self.current_index]
 
-	def get_frame_flipped(self, flip_x: bool = False, flip_y: bool = False) -> Any | None:
+	def get_frame_flipped(self, flip_x: bool = False, flip_y: bool = False) -> SurfaceLike | None:
 		frame = self.get_frame()
-		if frame is None:
-			return None
-
-		if not flip_x and not flip_y:
+		if frame is None or (not flip_x and not flip_y):
 			return frame
 
 		key = (self.current_action, self.current_index, flip_x, flip_y)
-
 		cached = self._flip_cache.get(key)
 		if cached is not None:
 			return cached
 
 		flipped = flip_surface(frame, flip_x=flip_x, flip_y=flip_y)
 		self._flip_cache[key] = flipped
-
 		return flipped
 
 	def get_duration(self, action: str | None = None) -> int:
 		lookup = action or self.current_action
-		frames = self.frames.get(lookup, [])
-
-		return len(frames) * self.frame_rate
+		return len(self.frames.get(lookup, [])) * self.frame_rate
 
 	def _slice_hybrid(self) -> None:
 		sheet_height = self.sheet.get_height()
 		step_y = max(1, self.frame_height + self.gap)
-
-		max_w = self.frame_width
-		max_h = self.frame_height
+		max_width = self.frame_width
+		max_height = self.frame_height
 
 		for row_index, action in enumerate(self.actions):
 			expected_top = row_index * step_y
@@ -110,19 +101,12 @@ class Animation:
 				continue
 
 			row_start, row_end = self._resolve_row_range(expected_top, expected_bottom)
-			col_ranges = self._detect_col_ranges(row_start, row_end)
+			col_ranges = self._detect_col_ranges(row_start, row_end) or self._fixed_col_ranges(row_start, row_end)
 
-			if not col_ranges:
-				col_ranges = self._fixed_col_ranges(row_start, row_end)
-
-			frames: list[Any] = []
+			frames: list[SurfaceLike] = []
 			for col_start, col_end in col_ranges:
-				if col_end <= col_start:
-					continue
-
 				frame_width = col_end - col_start
 				frame_height = row_end - row_start
-
 				if frame_width <= 0 or frame_height <= 0:
 					continue
 
@@ -131,38 +115,31 @@ class Animation:
 
 				frame = self.sheet.subsurface((col_start, row_start, frame_width, frame_height)).copy()
 				frames.append(frame)
-
-				max_w = max(max_w, frame.get_width())
-				max_h = max(max_h, frame.get_height())
+				max_width = max(max_width, frame.get_width())
+				max_height = max(max_height, frame.get_height())
 
 			self.frames[action] = frames
 
-		self.frame_width = max_w
-		self.frame_height = max_h
-
+		self.frame_width = max_width
+		self.frame_height = max_height
 		if self.frame_width > 0 and self.frame_height > 0:
 			self._normalize_frame_sizes(self.frame_width, self.frame_height)
 
 	def _slice_auto(self) -> None:
 		row_ranges = self._mask_to_ranges(self._row_mask(0, self.sheet.get_height()), gap_tolerance=self.gap_tolerance)
-
 		if not row_ranges:
 			return
 
-		max_w = 0
-		max_h = 0
-
+		max_width = 0
+		max_height = 0
 		for row_index, (row_start, row_end) in enumerate(row_ranges):
 			if row_index >= len(self.actions):
 				break
 
-			frames: list[Any] = []
-
-			col_ranges = self._detect_col_ranges(row_start, row_end)
-			for col_start, col_end in col_ranges:
+			frames: list[SurfaceLike] = []
+			for col_start, col_end in self._detect_col_ranges(row_start, row_end):
 				frame_width = col_end - col_start
 				frame_height = row_end - row_start
-
 				if frame_width <= 0 or frame_height <= 0:
 					continue
 
@@ -171,36 +148,29 @@ class Animation:
 
 				frame = self.sheet.subsurface((col_start, row_start, frame_width, frame_height)).copy()
 				frames.append(frame)
+				max_width = max(max_width, frame.get_width())
+				max_height = max(max_height, frame.get_height())
 
-				max_w = max(max_w, frame.get_width())
-				max_h = max(max_h, frame.get_height())
+			self.frames[self.actions[row_index]] = frames
 
-			action = self.actions[row_index]
-			self.frames[action] = frames
-
-		self.frame_width = max_w
-		self.frame_height = max_h
-
+		self.frame_width = max_width
+		self.frame_height = max_height
 		if self.frame_width > 0 and self.frame_height > 0:
 			self._normalize_frame_sizes(self.frame_width, self.frame_height)
 
 	def _resolve_row_range(self, expected_top: int, expected_bottom: int) -> tuple[int, int]:
-		height = self.sheet.get_height()
+		sheet_height = self.sheet.get_height()
+		expected_top = max(0, min(expected_top, max(0, sheet_height - 1)))
+		expected_bottom = max(expected_top + 1, min(expected_bottom, sheet_height))
 
-		expected_top = max(0, min(expected_top, max(0, height - 1)))
-		expected_bottom = max(expected_top + 1, min(expected_bottom, height))
-
-		probe_pad = max(2, self.gap_tolerance * 2)
-		probe_top = max(0, expected_top - probe_pad)
-		probe_bottom = min(height, expected_bottom + probe_pad)
-
+		probe_padding = max(2, self.gap_tolerance * 2)
+		probe_top = max(0, expected_top - probe_padding)
+		probe_bottom = min(sheet_height, expected_bottom + probe_padding)
 		ranges = self._mask_to_ranges(self._row_mask(probe_top, probe_bottom), gap_tolerance=self.gap_tolerance)
-
 		if not ranges:
 			return expected_top, expected_bottom
 
 		expected_center = (expected_top + expected_bottom) * 0.5
-
 		best_start = expected_top
 		best_end = expected_bottom
 		best_distance = float("inf")
@@ -209,7 +179,6 @@ class Animation:
 			global_start = probe_top + local_start
 			global_end = probe_top + local_end
 			center = (global_start + global_end) * 0.5
-
 			distance = abs(center - expected_center)
 			if distance < best_distance:
 				best_distance = distance
@@ -222,9 +191,7 @@ class Animation:
 		if row_end <= row_start:
 			return []
 
-		col_mask = self._column_mask(row_start, row_end)
-
-		return self._mask_to_ranges(col_mask, gap_tolerance=self.gap_tolerance)
+		return self._mask_to_ranges(self._column_mask(row_start, row_end), gap_tolerance=self.gap_tolerance)
 
 	def _fixed_col_ranges(self, row_start: int, row_end: int) -> list[tuple[int, int]]:
 		if self.frame_width <= 0 or row_end <= row_start:
@@ -232,8 +199,8 @@ class Animation:
 
 		sheet_width = self.sheet.get_width()
 		step_x = max(1, self.frame_width + self.gap)
-
 		ranges: list[tuple[int, int]] = []
+
 		for x in range(0, max(1, sheet_width - self.frame_width + 1), step_x):
 			x_end = min(sheet_width, x + self.frame_width)
 			if x_end <= x:
@@ -246,76 +213,63 @@ class Animation:
 
 		return ranges
 
-	def _mask_to_ranges(self, mask, gap_tolerance: int = 0) -> list[tuple[int, int]]:
+	def _mask_to_ranges(self, mask: list[bool], gap_tolerance: int = 0) -> list[tuple[int, int]]:
 		ranges: list[tuple[int, int]] = []
-		
-		start = None
-		gap_start = None
+		start: int | None = None
+		gap_start: int | None = None
 
-		for idx, value in enumerate(mask):
+		for index, value in enumerate(mask):
 			if value and start is None:
-				start = idx
+				start = index
 				gap_start = None
 			elif not value and start is not None:
 				if gap_start is None:
-					gap_start = idx
+					gap_start = index
 
 				if gap_tolerance <= 0:
-					ranges.append((start, idx))
+					ranges.append((start, index))
 					start = None
 					gap_start = None
 			elif value and start is not None and gap_start is not None:
-				gap_len = idx - gap_start
-				if gap_len > gap_tolerance:
+				gap_length = index - gap_start
+				if gap_length > gap_tolerance:
 					ranges.append((start, gap_start))
-					start = idx
+					start = index
 
 				gap_start = None
 
 		if start is not None:
-			end = gap_start if gap_start is not None else len(mask)
-			ranges.append((start, end))
+			ranges.append((start, gap_start if gap_start is not None else len(mask)))
 
 		return ranges
 
 	def _normalize_frame_sizes(self, width: int, height: int) -> None:
 		for action, frames in self.frames.items():
-			normalized: list[Any] = []
+			normalized: list[SurfaceLike] = []
 
 			for frame in frames:
 				if frame.get_width() == width and frame.get_height() == height:
 					normalized.append(frame)
 					continue
 
+				# Centralizamos os sprites menores em uma tela comum para simplificar colisão e desenho.
 				canvas = create_surface(width, height, alpha=True)
-
 				offset_x = (width - frame.get_width()) // 2
 				offset_y = height - frame.get_height()
-
 				canvas.blit(frame, (offset_x, offset_y))
 				normalized.append(canvas)
 
 			self.frames[action] = normalized
 
 	def _row_mask(self, top: int, bottom: int) -> list[bool]:
-		mask: list[bool] = []
-		for y in range(max(0, top), max(0, bottom)):
-			mask.append(self._row_has_pixels(y))
-
-		return mask
+		return [self._row_has_pixels(y) for y in range(max(0, top), max(0, bottom))]
 
 	def _column_mask(self, row_start: int, row_end: int) -> list[bool]:
-		mask: list[bool] = []
-
 		sheet_width = self.sheet.get_width()
-		for x in range(sheet_width):
-			mask.append(self._column_has_pixels(x, row_start, row_end))
-
-		return mask
+		return [self._column_has_pixels(x, row_start, row_end) for x in range(sheet_width)]
 
 	def _row_has_pixels(self, y: int) -> bool:
-		width = self.sheet.get_width()
-		for x in range(width):
+		for x in range(self.sheet.get_width()):
 			if self.sheet.get_at((x, y)).a > self.alpha_threshold:
 				return True
 

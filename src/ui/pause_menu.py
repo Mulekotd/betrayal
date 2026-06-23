@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from src.system.input import Input
+from src.utils.types import FontLike
 from src.utils.window import blit_surface, create_surface, draw_rect, get_screen, set_mouse_visible
 
 
@@ -20,7 +22,7 @@ class PauseButton:
 
 
 class PauseMenu:
-	def __init__(self, width: int, height: int, title_font, button_font) -> None:
+	def __init__(self, width: int, height: int, title_font: FontLike, button_font: FontLike) -> None:
 		self.width = width
 		self.height = height
 		self.title_font = title_font
@@ -60,7 +62,7 @@ class PauseMenu:
 		else:
 			self.open()
 
-	def update(self, input_manager) -> None:
+	def update(self, input_manager: Input | None) -> None:
 		if not self.active or input_manager is None:
 			return
 

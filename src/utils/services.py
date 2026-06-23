@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
+from src.utils.types import FontLike
 from src.utils.window import get_window
 
 
@@ -10,18 +10,18 @@ class FontLibrary:
 	font_path: Path
 	title_path: Path | None = None
 	mini_path: Path | None = None
-	_cache: dict[tuple[str, int], Any] = field(default_factory=dict)
+	_cache: dict[tuple[str, int], FontLike] = field(default_factory=dict)
 
-	def get(self, size: int) -> Any:
+	def get(self, size: int) -> FontLike:
 		return self._load("ui", self.font_path, size)
 
-	def title(self, size: int) -> Any:
+	def title(self, size: int) -> FontLike:
 		return self._load("title", self.title_path or self.font_path, size)
 
-	def mini(self, size: int) -> Any:
+	def mini(self, size: int) -> FontLike:
 		return self._load("mini", self.mini_path or self.font_path, size)
 
-	def _load(self, family: str, path: Path, size: int) -> Any:
+	def _load(self, family: str, path: Path, size: int) -> FontLike:
 		size = max(1, int(size))
 		key = (family, size)
 		font = self._cache.get(key)

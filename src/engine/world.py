@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from src.utils.rect import Rect
+from src.utils.types import SurfaceLike
 from src.utils.window import get_screen, load_image, create_surface, scale_surface
 
 from src.engine.tileset import Tile, TileObject, TileSet
@@ -36,6 +37,7 @@ class WorldConfig:
 	village_tree_buffer: int = 180
 	village_attempts: int = 28
 	building_crop_padding: int = 24
+	boss_arena_clear_radius: float = 360.0
 
 
 class World:
@@ -76,14 +78,16 @@ class World:
 		self.tree_tileset = None
 		self.building_tiles = []
 
-		blocked_areas: list[Rect] = []
+		blocked_areas: list[Rect] = [self.boss_arena_rect()]
 		if buildings_path.exists():
 			self.building_tiles = self._load_building_tiles(buildings_path)
 			village_objects, blocked_areas = self._generate_village_layout(
 				player_center=player_center,
-				player_radius=player_radius
+				player_radius=player_radius,
+				blocked_areas=blocked_areas
 			)
 			self.objects.extend(village_objects)
+			blocked_areas = [self.boss_arena_rect(), *blocked_areas]
 
 		if trees_path.exists():
 			self.tree_tileset = TileSet(
@@ -101,6 +105,24 @@ class World:
 				)
 			)
 
+		self._sorted_objects = sorted(self.objects, key=lambda item: item.y + item.height)
+		self.static_colliders = [obj.rect for obj in self.objects if obj.collidable]
+
+	def boss_arena_rect(self) -> Rect:
+		radius = max(64.0, float(self.config.boss_arena_clear_radius))
+		return Rect(
+			float(self.bounds.centerx - radius),
+			float(self.bounds.centery - radius),
+			radius * 2.0,
+			radius * 2.0
+		)
+
+	def clear_area(self, area: Rect) -> None:
+		self.objects = [
+			obj
+			for obj in self.objects
+			if not obj.collidable or not obj.rect.colliderect(area)
+		]
 		self._sorted_objects = sorted(self.objects, key=lambda item: item.y + item.height)
 		self.static_colliders = [obj.rect for obj in self.objects if obj.collidable]
 
@@ -217,7 +239,8 @@ class World:
 	def _generate_village_layout(
 		self,
 		player_center: tuple[float, float],
-		player_radius: float
+		player_radius: float,
+		blocked_areas: list[Rect] | None = None
 	) -> tuple[list[TileObject], list[Rect]]:
 		if not self.building_tiles:
 			return ([], [])
@@ -282,42 +305,47 @@ class World:
 				if self._circle_intersects_rect(player_center[0], player_center[1], safe_radius, reserved_area):
 					continue
 
+				if self._rect_intersects_any(reserved_area, blocked_areas):
+					continue
+
 				return (objects, [reserved_area])
 
 		fallback_bounds = self._placement_bounds()
-		fallback_x = max(
-			float(fallback_bounds.left),
-			min(
-				float(fallback_bounds.centerx - total_width * 0.5),
-				float(fallback_bounds.right - total_width)
-			)
-		)
-		fallback_y = max(
-			float(fallback_bounds.top),
-			min(
-				float(fallback_bounds.top + (fallback_bounds.height - total_height) * 0.5),
-				float(fallback_bounds.bottom - total_height)
-			)
-		)
-		objects = self._build_village_objects(
-			tile_indices=tile_indices,
-			anchor_x=fallback_x,
-			anchor_y=fallback_y,
-			cols=cols,
-			col_widths=col_widths,
-			row_heights=row_heights,
-			col_offsets=col_offsets,
-			row_offsets=row_offsets
-		)
-		village_bounds = self._bounds_for_objects(objects)
-		if village_bounds is None:
-			return ([], [])
+		fallback_positions = [
+			(float(fallback_bounds.left), float(fallback_bounds.top)),
+			(float(fallback_bounds.right - total_width), float(fallback_bounds.top)),
+			(float(fallback_bounds.left), float(fallback_bounds.bottom - total_height)),
+			(float(fallback_bounds.right - total_width), float(fallback_bounds.bottom - total_height)),
+		]
 
-		reserved_area = village_bounds.inflate(
-			self.config.village_tree_buffer * 2,
-			self.config.village_tree_buffer * 2
-		)
-		return (objects, [reserved_area])
+		for fallback_x, fallback_y in fallback_positions:
+			objects = self._build_village_objects(
+				tile_indices=tile_indices,
+				anchor_x=fallback_x,
+				anchor_y=fallback_y,
+				cols=cols,
+				col_widths=col_widths,
+				row_heights=row_heights,
+				col_offsets=col_offsets,
+				row_offsets=row_offsets
+			)
+			village_bounds = self._bounds_for_objects(objects)
+			if village_bounds is None:
+				continue
+
+			reserved_area = village_bounds.inflate(
+				self.config.village_tree_buffer * 2,
+				self.config.village_tree_buffer * 2
+			)
+			if self._circle_intersects_rect(player_center[0], player_center[1], safe_radius, reserved_area):
+				continue
+
+			if self._rect_intersects_any(reserved_area, blocked_areas):
+				continue
+
+			return (objects, [reserved_area])
+
+		return ([], [])
 
 	def _build_village_objects(
 		self,
@@ -375,7 +403,7 @@ class World:
 
 		return tiles
 
-	def _building_crop_rects(self, sheet) -> list[Rect]:
+	def _building_crop_rects(self, sheet: SurfaceLike) -> list[Rect]:
 		sheet_width = sheet.get_width()
 		sheet_height = sheet.get_height()
 		padding = int(self.config.building_crop_padding)
@@ -419,7 +447,7 @@ class World:
 
 		return crop_rects
 
-	def _row_has_alpha(self, surface, y: int) -> bool:
+	def _row_has_alpha(self, surface: SurfaceLike, y: int) -> bool:
 		width = surface.get_width()
 		for x in range(width):
 			if surface.get_at((x, y))[3] > 0:
@@ -427,7 +455,7 @@ class World:
 
 		return False
 
-	def _column_has_alpha(self, surface, x: int, top: int, bottom: int) -> bool:
+	def _column_has_alpha(self, surface: SurfaceLike, x: int, top: int, bottom: int) -> bool:
 		for y in range(top, bottom):
 			if surface.get_at((x, y))[3] > 0:
 				return True
@@ -545,3 +573,6 @@ class World:
 		dy = center_y - closest_y
 
 		return (dx * dx + dy * dy) < (radius * radius)
+
+	def _rect_intersects_any(self, rect: Rect, areas: list[Rect] | None) -> bool:
+		return any(rect.colliderect(area) for area in areas or [])
