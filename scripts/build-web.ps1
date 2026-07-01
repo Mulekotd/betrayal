@@ -60,7 +60,7 @@ try {
         --height 720 `
         --title Betrayal `
         --app_name betrayal `
-        --ume_block 1 `
+        --ume_block 0 `
         --icon $IconPath `
         .
 } finally {

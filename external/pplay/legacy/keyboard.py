@@ -1,5 +1,4 @@
 import pygame
-from pygame.locals import *
 
 # Initializes pygame's modules
 pygame.init()

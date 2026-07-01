@@ -1,7 +1,6 @@
 # Pygame and system modules
 import sys
 import pygame
-from pygame.locals import *
 from . import keyboard
 from . import mouse
 
@@ -72,7 +71,7 @@ class Window():
         pygame.display.update()  # refresh
         
         for event in pygame.event.get():  # necessary to not get errors
-            if event.type==QUIT:
+            if event.type == pygame.QUIT:
                 self.close()
         self.last_time = self.curr_time  # set last frame time
         self.curr_time = pygame.time.get_ticks()  # since pygame.init()  

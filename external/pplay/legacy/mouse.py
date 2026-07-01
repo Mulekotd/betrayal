@@ -1,5 +1,4 @@
 import pygame
-from pygame.locals import *
 from .point import *
 
 # Initializes pygame's modules

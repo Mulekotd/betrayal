@@ -1,5 +1,14 @@
 import os
 
+
+def _is_web_runtime():
+    try:
+        import platform
+
+        return hasattr(platform, "window")
+    except Exception:
+        return False
+
 # 1. Verifica integridade da Engine Nova
 COMPONENTES_VITAIS =[
     "window.py", "sprite.py", "physics.py", "gameimage.py", 
@@ -21,11 +30,12 @@ verificar_integridade()
 # 2. ATIVADOR DE RETROCOMPATIBILIDADE PPLAY 1.0
 # Faz jogos antigos rodarem no motor novo automaticamente.
 # =========================================================
-try:
-    from .retro_bridge import aplicar_retrocompatibilidade
-    aplicar_retrocompatibilidade()
-except Exception as e:
-    print(f"Aviso: Ponte de retrocompatibilidade falhou: {e}")
+if not _is_web_runtime():
+    try:
+        from .retro_bridge import aplicar_retrocompatibilidade
+        aplicar_retrocompatibilidade()
+    except Exception as e:
+        print(f"Aviso: Ponte de retrocompatibilidade falhou: {e}")
 
 # =========================================================
 __all__ =[

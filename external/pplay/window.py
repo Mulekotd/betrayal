@@ -1,7 +1,14 @@
 import pygame
 import sys
-from pathlib import Path
-from pygame.locals import *
+
+
+def _is_web_runtime():
+    try:
+        import platform
+
+        return hasattr(platform, "window")
+    except Exception:
+        return False
 
 """
 ===============================================================================
@@ -37,33 +44,39 @@ class Window:
         if hasattr(self, '_already_init'):
             return
         
-        if not pygame.get_init():
-            pygame.init()
-
         # Resolução interna do jogo
         self.largura = largura_virtual
         self.altura = altura_virtual
         self.titulo = titulo
         self.pixel_art = pixel_art
         
-        self._clock = pygame.time.Clock()
+        self._clock = None
         self._delta_time = 0
         self.eventos = []
         self.cor_fundo = (0, 0, 0)
 
         # Configura flags de vídeo
-        flags = pygame.DOUBLEBUF | pygame.HWSURFACE
-        if resizavel:
-            flags |= pygame.RESIZABLE
+        web_runtime = _is_web_runtime()
+        if web_runtime:
+            flags = 0
+        else:
+            if not pygame.get_init():
+                pygame.init()
+            flags = pygame.DOUBLEBUF | pygame.HWSURFACE
+            if resizavel:
+                flags |= pygame.RESIZABLE
             
-        # Cria a janela real do Windows
-        self.real_screen = pygame.display.set_mode([self.largura, self.altura], flags)
+        # No pygbag, o display deve ser aberto antes dos imports do PPlay.
+        self.real_screen = pygame.display.get_surface() if web_runtime else None
+        if self.real_screen is None:
+            self.real_screen = pygame.display.set_mode([self.largura, self.altura], flags)
         
         # Cria o Buffer Virtual (Canvas)
         self.screen = pygame.Surface((self.largura, self.altura))
         Window.screen = self.screen # Sincroniza atributo estático
         
         pygame.display.set_caption(self.titulo)
+        self._clock = pygame.time.Clock()
         
         # Subsistemas
         from .keyboard import Keyboard
@@ -85,14 +98,14 @@ class Window:
 
     @classmethod
     def get_display_size(cls):
-        if not pygame.get_init():
-            pygame.init()
+        if not _is_web_runtime() and not pygame.display.get_init():
+            pygame.display.init()
 
         info = pygame.display.Info()
         return info.current_w, info.current_h
 
     def set_native_size(self, width, height):
-        flags = pygame.DOUBLEBUF | pygame.HWSURFACE | pygame.RESIZABLE
+        flags = 0 if _is_web_runtime() else pygame.DOUBLEBUF | pygame.HWSURFACE | pygame.RESIZABLE
         self.real_screen = pygame.display.set_mode(
             (max(1, int(width)), max(1, int(height))),
             flags
@@ -139,9 +152,9 @@ class Window:
         # Eventos
         self.eventos = pygame.event.get()
         for ev in self.eventos:
-            if ev.type == QUIT:
+            if ev.type == pygame.QUIT:
                 self.close()
-            if ev.type == KEYDOWN and ev.key == K_F11:
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_F11:
                 pygame.display.toggle_fullscreen()
 
         # Sincroniza o tempo (Delta Time)
@@ -152,6 +165,13 @@ class Window:
 
     def get_fps(self):
         return self._clock.get_fps()
+
+    def set_title(self, title):
+        self.titulo = title
+        pygame.display.set_caption(title)
+
+    def get_title(self):
+        return self.titulo
 
     def set_background_color(self, cor):
         if isinstance(cor, str):

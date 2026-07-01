@@ -1,7 +1,6 @@
 # Pygame and system modules
 import sys
 import pygame
-from pygame.locals import *
 from . import window
 from . import gameobject
 
@@ -15,9 +14,9 @@ def load_image(name, colorkey=None, alpha=False):
     if alpha:image = image.convert_alpha()
     else:image=image.convert()
     if colorkey is not None:
-        if colorkey is -1:
+        if colorkey == -1:
             colorkey = image.get_at((0,0))
-        image.set_colorkey(colorkey, RLEACCEL)
+        image.set_colorkey(colorkey, pygame.RLEACCEL)
     return image, image.get_rect()
         
 """GameImage is the base class to deal with images"""

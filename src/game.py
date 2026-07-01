@@ -56,7 +56,7 @@ class Game:
 		self.window.set_title(self.title)
 		self.window.set_background_color(list(self.background_color))
 
-		if native_width and native_height:
+		if native_width and native_height and (native_width != self.width or native_height != self.height):
 			self.window.set_native_size(native_width, native_height)
 
 		assets_dir = Path(__file__).resolve().parent / "assets"
@@ -92,6 +92,9 @@ class Game:
 			self.current_scene.handle_events(self.input)
 
 	def update(self, dt: float) -> None:
+		if self.audio is not None:
+			self.audio.pump()
+
 		if self.current_scene is not None:
 			self.current_scene.update(dt, self.input)
 
