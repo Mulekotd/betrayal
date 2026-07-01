@@ -8,5 +8,8 @@ env/
 .venv/
 .env/
 
+# build output
+build/
+
 # Zone.Identifier files
 *.py:Zone.Identifier

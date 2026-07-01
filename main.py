@@ -1,10 +1,10 @@
-from external.pplay.window import Window
+import asyncio
 
 from src.game import Game
 from src.scenes.menu_scene import MenuScene
 
 
-def main() -> None:
+async def main() -> None:
     screen_w, screen_h = 1280, 720
 
     game = Game(width=screen_w, height=screen_h, title="Betrayal", fps=60)
@@ -22,8 +22,8 @@ def main() -> None:
         )
     )
 
-    game.loop()
+    await game.loop()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

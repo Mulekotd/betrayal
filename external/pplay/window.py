@@ -98,14 +98,14 @@ class Window:
             flags
         )
 
-    def update(self):
+    def update(self, fps=0):
         """Finaliza o desenho e projeta na tela real com proteção contra crash."""
         largura_real, altura_real = self.real_screen.get_size()
         
         # PROTEÇÃO: Se a janela estiver minimizada (tamanho 0), não tenta desenhar
         if largura_real < 1 or altura_real < 1:
             pygame.display.flip()
-            self._clock.tick()
+            self._clock.tick(max(0, int(fps or 0)))
             self.eventos = pygame.event.get()
             return
 
@@ -145,7 +145,7 @@ class Window:
                 pygame.display.toggle_fullscreen()
 
         # Sincroniza o tempo (Delta Time)
-        self._delta_time = self._clock.tick() / 1000.0
+        self._delta_time = self._clock.tick(max(0, int(fps or 0))) / 1000.0
 
     def delta_time(self):
         return self._delta_time

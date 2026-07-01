@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -102,7 +103,7 @@ class Game:
 		if self.current_scene is not None:
 			self.current_scene.render()
 		self._draw_cursor()
-		self.window.update()
+		self.window.update(self.fps)
 
 	def _configure_window_assets(self, assets_dir: Path) -> None:
 		if self.window is None:
@@ -146,7 +147,7 @@ class Game:
 		draw_y = int(mouse_y - self.cursor_hotspot[1])
 		blit_surface(self.cursor_surface, (draw_x, draw_y), target=get_screen())
 
-	def loop(self) -> None:
+	async def loop(self) -> None:
 		if self.window is None:
 			self.initialize()
 
@@ -159,6 +160,4 @@ class Game:
 			self.handle_events()
 			self.update(delta_time)
 			self.render()
-
-			if self.fps > 0:
-				self.window.delay(int(1000 / self.fps))
+			await asyncio.sleep(0)

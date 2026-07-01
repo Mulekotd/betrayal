@@ -1,8 +1,7 @@
 import math
+import random
 from dataclasses import dataclass
 from pathlib import Path
-
-import numpy as np
 
 from src.utils.rect import Rect
 from src.utils.types import SurfaceLike
@@ -68,7 +67,7 @@ class World:
 		self.objects: list[TileObject] = []
 		self._sorted_objects: list[TileObject] = []
 		self.static_colliders: list[Rect] = []
-		self._rng = np.random.default_rng()
+		self._rng = random.Random()
 
 	def rebuild(self, player_center: tuple[float, float], player_radius: float) -> None:
 		trees_path = self.images_dir / "trees.png"
@@ -167,44 +166,44 @@ class World:
 
 		bin_size = max(96, int(spacing * 0.76))
 
-		x_coords = np.arange(
+		x_coords = self._float_range(
 			placement_bounds.left + spacing * 0.5,
 			placement_bounds.right,
 			spacing,
-			dtype=np.float32
 		)
-
-		y_coords = np.arange(
+		y_coords = self._float_range(
 			placement_bounds.top + spacing * 0.5,
 			placement_bounds.bottom,
 			spacing,
-			dtype=np.float32
 		)
 
-		if x_coords.size == 0:
-			x_coords = np.array([placement_bounds.centerx], dtype=np.float32)
+		if not x_coords:
+			x_coords = [float(placement_bounds.centerx)]
 
-		if y_coords.size == 0:
-			y_coords = np.array([placement_bounds.centery], dtype=np.float32)
+		if not y_coords:
+			y_coords = [float(placement_bounds.centery)]
 
-		mesh_x, mesh_y = np.meshgrid(x_coords, y_coords)
-
-		candidate_points = np.column_stack((mesh_x.ravel(), mesh_y.ravel())).astype(np.float32)
-		if candidate_points.size == 0:
+		candidate_points = [(x, y) for y in y_coords for x in x_coords]
+		if not candidate_points:
 			return []
 
-		jitter = self._rng.uniform(-spacing * 0.32, spacing * 0.32, size=candidate_points.shape).astype(np.float32)
-		candidate_points += jitter
-
-		extra_count = max(12, int(candidate_points.shape[0] * self.config.extra_ratio))
-		extra_points = np.column_stack(
+		jitter_amount = spacing * 0.32
+		candidate_points = [
 			(
-				self._rng.uniform(placement_bounds.left, placement_bounds.right, size=extra_count),
-				self._rng.uniform(placement_bounds.top, placement_bounds.bottom, size=extra_count)
+				x + self._rng.uniform(-jitter_amount, jitter_amount),
+				y + self._rng.uniform(-jitter_amount, jitter_amount),
 			)
-		).astype(np.float32)
+			for x, y in candidate_points
+		]
 
-		candidate_points = np.vstack((candidate_points, extra_points))
+		extra_count = max(12, int(len(candidate_points) * self.config.extra_ratio))
+		candidate_points.extend(
+			(
+				self._rng.uniform(placement_bounds.left, placement_bounds.right),
+				self._rng.uniform(placement_bounds.top, placement_bounds.bottom),
+			)
+			for _ in range(extra_count)
+		)
 		self._rng.shuffle(candidate_points)
 
 		occupied_bins: dict[tuple[int, int], list[Rect]] = {}
@@ -215,7 +214,7 @@ class World:
 			if len(objects) >= target_count:
 				break
 
-			tile_index = int(self._rng.integers(0, len(self.tree_tileset.tiles)))
+			tile_index = self._rng.randrange(len(self.tree_tileset.tiles))
 			tile = self.tree_tileset.tiles[tile_index]
 
 			x = float(point_x - tile.width * 0.5)
@@ -235,6 +234,15 @@ class World:
 			self._register_tree_rect(obj.rect, occupied_bins, bin_size=bin_size)
 
 		return objects
+
+	def _float_range(self, start: float, stop: float, step: float) -> list[float]:
+		values: list[float] = []
+		current = float(start)
+		while current < stop:
+			values.append(current)
+			current += step
+
+		return values
 
 	def _generate_village_layout(
 		self,
