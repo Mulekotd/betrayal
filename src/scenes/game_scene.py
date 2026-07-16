@@ -184,6 +184,10 @@ class GameScene:
 		if self.victory_active:
 			return
 
+		# Durante o game over, o único comando permitido é ENTER, tratado em
+		if self.player_dead:
+			return
+
 		if input_manager.keyboard.key_down("ESC"):
 			self.pause_menu.toggle()
 
